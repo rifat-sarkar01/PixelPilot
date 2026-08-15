@@ -66,6 +66,11 @@ class SystemPromptBuilder:
             parts.append(f"Correct script:\n```python\n{code}\n```")
         return "\n".join(parts)
 
+    def format_visual_plan(self, visual_plan: str | None) -> str:
+        if not visual_plan:
+            return "(none - no vision plan was produced for this request; work from the user request and rules above)"
+        return visual_plan
+
     # ------------------------------------------------------------- composition
 
     def build_messages(
@@ -75,12 +80,14 @@ class SystemPromptBuilder:
         procedures: list[dict] | None = None,
         example: dict | None = None,
         history: list[dict] | None = None,
+        visual_plan: str | None = None,
     ) -> list[dict]:
         system = self.build_system_prompt(
             canvas_state=canvas_state,
             procedures=procedures,
             example=example,
             history=history,
+            visual_plan=visual_plan,
         )
         return [{"role": "system", "content": system},
                 {"role": "user", "content": self.budget.fit("user_message", user_text)}]
@@ -91,6 +98,7 @@ class SystemPromptBuilder:
         procedures: list[dict] | None = None,
         example: dict | None = None,
         history: list[dict] | None = None,
+        visual_plan: str | None = None,
     ) -> str:
         canvas_json = json.dumps(canvas_state or {}, indent=2) if canvas_state else "{}"
         history_text = self.budget.summarize_history(
@@ -103,6 +111,7 @@ class SystemPromptBuilder:
             procedures=self.budget.fit("api_reference", self.format_procedures(procedures)),
             example=self.budget.fit("examples", self.format_example(example)),
             history=history_text,
+            visual_plan=self.budget.fit("visual_plan", self.format_visual_plan(visual_plan)),
         )
 
         rules = self.budget.fit("system", self.editor_rules())

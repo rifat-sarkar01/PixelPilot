@@ -245,9 +245,19 @@ class PixelPilotCLI:
             except Exception as exc:  # noqa: BLE001
                 self.console.print(f"[dim]RAG retrieval skipped: {exc}[/dim]")
 
-        # 2. Generate the script.
+        # 2. Vision-first plan: the vision model looks at the ACTUAL current
+        # canvas and turns the request into a concrete spec (sizes, positions,
+        # colors) before the code model writes a single line. This is what
+        # previously only happened after execution, as a critique - doing it
+        # up front means the code model implements a grounded plan instead of
+        # guessing, so fewer post-execution rewrite rounds should be needed.
+        visual_plan = None
+        if self.ollama_ok and self.vision_enabled and self.bridge_ok:
+            visual_plan = self._plan_with_vision(text)
+
+        # 3. Generate the script.
         if self.ollama_ok:
-            script = self._generate_script(text, procedures, example)
+            script = self._generate_script(text, procedures, example, visual_plan=visual_plan)
         else:
             script = self._demo_generate(text)
 
@@ -280,12 +290,46 @@ class PixelPilotCLI:
         examples = results.get("examples", [])
         return procedures, (examples[0] if examples else None)
 
+    def _plan_with_vision(self, text: str) -> str | None:
+        """Ask the vision model for a grounded visual plan before codegen.
+
+        Best-effort: any failure (no screenshot, model unreachable, bad
+        response) just returns None and generation proceeds exactly as it
+        did before this existed - this step must never block a request.
+        """
+        try:
+            screenshot = self.bridge.capture_screenshot()
+        except BridgeConnectionError as exc:
+            self.console.print(f"[dim]Vision planning skipped (no screenshot): {exc}[/dim]")
+            return None
+
+        from pixelpilot.feedback.vision_planner import VisionPlanner
+
+        width, height = (list(self.tracker.state.dimensions) + [None, None])[:2]
+        planner = VisionPlanner(
+            self.client, model=self.settings.ollama.vision_model, enabled=self.vision_enabled
+        )
+        self.console.print("[dim]Vision model is planning the scene...[/dim]")
+        result = planner.plan(text, screenshot, width=width, height=height)
+        if not result.get("success"):
+            reason = result.get("raw") or "no usable plan returned"
+            self.console.print(f"[dim]Vision planning skipped ({reason}) - generating directly.[/dim]")
+            return None
+        self.console.print("[dim]Vision plan ready - handing off to the code model.[/dim]")
+        return result.get("plan_text") or None
+
     def _make_store(self):
         from pixelpilot.rag.indexer import _make_store
 
         return _make_store(self.settings)
 
-    def _generate_script(self, text: str, procedures: list[dict], example: dict | None) -> str | None:
+    def _generate_script(
+        self,
+        text: str,
+        procedures: list[dict],
+        example: dict | None,
+        visual_plan: str | None = None,
+    ) -> str | None:
         from pixelpilot.prompts.system import SystemPromptBuilder
 
         builder = SystemPromptBuilder(
@@ -297,6 +341,7 @@ class PixelPilotCLI:
             procedures=procedures,
             example=example,
             history=self.history[-self.settings.session.max_history_turns * 2 :],
+            visual_plan=visual_plan,
         )
         for attempt in range(3):
             try:

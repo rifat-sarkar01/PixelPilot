@@ -70,6 +70,7 @@ class ContextBudget:
         "history": 2000,
         "user_message": 200,
         "output": 2000,
+        "visual_plan": 600,
     }
 
     def __init__(self, num_ctx: int = 8192) -> None:

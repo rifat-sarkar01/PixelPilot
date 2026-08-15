@@ -53,7 +53,24 @@ GOTCHAS = """GIMP scripting rules (Python-Fu):
         mid-left(0-.33, .33-.66)   center(.33-.66, .33-.66)    mid-right(.66-1, .33-.66)
         bot-left(0-.33, .66-1)     bot-mid(.33-.66, .66-1)     bot-right(.66-1, .66-1)
     Pick the region(s) an object occupies (e.g. a tree canopy = top-mid, trunk = spans
-    mid-mid into bot-mid), then compute concrete pixel numbers from width/height."""
+    mid-mid into bot-mid), then compute concrete pixel numbers from width/height.
+16. `gimp_image_select_rectangle` / `gimp_image_select_ellipse` return None - they do
+    NOT return a layer or drawable. Never assign their result and pass it to
+    gimp_edit_fill. Always fill the actual drawable variable:
+        WRONG:  layer = pdb.gimp_image_select_rectangle(image, ...)
+                pdb.gimp_edit_fill(layer, FOREGROUND_FILL)   # invalid ID, crashes
+        RIGHT:  pdb.gimp_image_select_rectangle(image, ...)
+                pdb.gimp_edit_fill(drawable, FOREGROUND_FILL)
+17. The main subject of a from-scratch illustration should be clearly visible and fill
+    most of the canvas - roughly 50-80% of width and height, not a small fraction of it
+    (e.g. a car body should be `width * 0.5` to `width * 0.7` wide, not `width * 0.15`).
+    When an object has two or more of the same part (wheels, eyes, windows, legs), give
+    each one a DIFFERENT x (or y) offset so they sit side by side - reusing the same
+    formula for both positions stacks them on top of each other instead:
+        WRONG:  wheel1_x = body_x + (body_w - d) // 2
+                wheel2_x = body_x + (body_w - d) // 2      # identical -> same spot
+        RIGHT:  wheel1_x = body_x + int(body_w * 0.15)     # left side
+                wheel2_x = body_x + int(body_w * 0.75)     # right side"""
 
 COMMON_PROCEDURES = """Common GIMP procedures (baseline, always available):
 - pdb.gimp_image_undo_group_start / pdb.gimp_image_undo_group_end(image)

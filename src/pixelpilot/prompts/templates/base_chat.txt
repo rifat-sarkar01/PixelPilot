@@ -1,3 +1,10 @@
+VISUAL PLAN FROM VISION MODEL
+------------------------------
+$visual_plan
+(If a plan is present above, implement it directly - it was produced by looking
+at the actual current canvas, so its sizes/positions/colors are already grounded
+and correct. Treat it as the specification; the user request is the intent behind it.)
+
 CURRENT CANVAS STATE
 --------------------
 $canvas_state

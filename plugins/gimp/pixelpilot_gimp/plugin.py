@@ -400,7 +400,8 @@ def _canvas_state():
 
 
 def _screenshot():
-    image = _current_image()
+    image = _ensure_image()  # same guarantee as execute - screenshot must never
+                              # crash just because nothing has been drawn yet
     copy = pdb.gimp_image_duplicate(image)
     tmp = tempfile.mkdtemp(prefix="pixelpilot_")
     try:

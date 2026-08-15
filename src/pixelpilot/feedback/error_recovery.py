@@ -12,6 +12,7 @@ from pixelpilot.bridge.state import CanvasState
 from pixelpilot.codegen.validator import SafetyValidator, extract_code_block
 from pixelpilot.config import Settings
 from pixelpilot.ollama.client import OllamaClient
+from pixelpilot.prompts.system import SystemPromptBuilder
 
 FIX_PROMPT = """The following script failed with this error:
 
@@ -28,8 +29,10 @@ Canvas state:
 Relevant API procedures (use these EXACT signatures - do not invent calls):
 {procedures}
 
-Please fix the script so it runs correctly. Output ONLY the corrected code
-inside a single ```python fenced code block."""
+Please fix the script so it runs correctly, following every rule above exactly as
+strictly as you did the first time (no wrapper functions, selection cleared after
+each fill, coordinates as fractions of the real canvas size, etc). Output ONLY the
+corrected code inside a single ```python fenced code block."""
 
 
 @dataclass
@@ -71,6 +74,7 @@ class ErrorRecovery:
         if not procedures:
             procedures = []
         proc_text = self._format_procedures(procedures) or "(none retrieved - rely on your knowledge)"
+        system_rules = SystemPromptBuilder(editor=self.editor).editor_rules()
 
         for attempt in range(self.max_retries):
             result.attempts = attempt + 1
@@ -82,8 +86,12 @@ class ErrorRecovery:
                 procedures=proc_text,
             )
             try:
-                response = self.client.generate(self.model, prompt, stream=False)
-                raw = response.get("response", "")
+                messages = [
+                    {"role": "system", "content": system_rules},
+                    {"role": "user", "content": prompt},
+                ]
+                response = self.client.chat(self.model, messages, stream=False)
+                raw = response.get("message", {}).get("content", "")
                 fixed = extract_code_block(raw)
             except Exception as exc:  # noqa: BLE001 - cannot reach the model
                 result.errors.append(f"Model call failed: {exc}")

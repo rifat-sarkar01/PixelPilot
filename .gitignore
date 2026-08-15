@@ -56,4 +56,5 @@ history.json
 scripts/
 chromadb/
 outputs/
-implementation_plan.md
+result_screenshot.png
+*_screenshot.png
