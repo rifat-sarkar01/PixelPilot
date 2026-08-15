@@ -1,0 +1,311 @@
+{
+  "meta": {
+    "description": "Curated starter catalog of Krita (PyKrita) API methods for PixelPilot RAG and hallucination validation.",
+    "notes": "Objects: Krita (singleton) -> Document -> Node (layers/groups/masks). Byte order for setPixelData is BGRA for 8-bit RGBA documents."
+  },
+  "methods": [
+    {
+      "name": "Krita.instance",
+      "category": "application",
+      "description": "Get the Krita application singleton.",
+      "signature": "Krita.instance() -> Krita",
+      "params": [],
+      "returns": "Krita",
+      "example": "app = Krita.instance()",
+      "version_compat": ["5.0+"],
+      "pitfalls": ["Always obtain the singleton once, at the top of the script."]
+    },
+    {
+      "name": "Krita.activeDocument",
+      "category": "document",
+      "description": "Get the currently active document.",
+      "signature": "app.activeDocument() -> Document",
+      "params": [],
+      "returns": "Document",
+      "example": "doc = app.activeDocument()",
+      "version_compat": ["5.0+"],
+      "pitfalls": ["Returns None when no document is open - always check."]
+    },
+    {
+      "name": "Krita.activeWindow",
+      "category": "application",
+      "description": "Get the active main window.",
+      "signature": "app.activeWindow() -> Window",
+      "params": [],
+      "returns": "Window",
+      "example": "window = app.activeWindow()",
+      "version_compat": ["5.0+"],
+      "pitfalls": ["None in batch/headless mode."]
+    },
+    {
+      "name": "Krita.createInfoObject",
+      "category": "application",
+      "description": "Create an InfoObject for export or filter configuration.",
+      "signature": "app.createInfoObject() -> InfoObject",
+      "params": [],
+      "returns": "InfoObject",
+      "example": "info = app.createInfoObject()",
+      "version_compat": ["5.0+"],
+      "pitfalls": []
+    },
+    {
+      "name": "Krita.filters",
+      "category": "application",
+      "description": "List available filters by name.",
+      "signature": "app.filters() -> list[str]",
+      "params": [],
+      "returns": "list",
+      "example": "names = app.filters()",
+      "version_compat": ["5.0+"],
+      "pitfalls": ["Filter names contain spaces, e.g. 'gaussian blur', 'brightness/contrast adjustment'."]
+    },
+    {
+      "name": "Krita.resources",
+      "category": "application",
+      "description": "List resources of a given type ('preset', 'brush', 'gradient', ...).",
+      "signature": "app.resources('preset') -> list[str]",
+      "params": [{"name": "resource_type", "type": "str"}],
+      "returns": "list",
+      "example": "presets = app.resources('preset')",
+      "version_compat": ["5.0+"],
+      "pitfalls": []
+    },
+    {
+      "name": "Document.activeNode",
+      "category": "document",
+      "description": "Get the currently active node (layer/group/mask).",
+      "signature": "doc.activeNode() -> Node",
+      "params": [],
+      "returns": "Node",
+      "example": "node = doc.activeNode()",
+      "version_compat": ["5.0+"],
+      "pitfalls": []
+    },
+    {
+      "name": "Document.rootNode",
+      "category": "document",
+      "description": "Get the root layer group of the document.",
+      "signature": "doc.rootNode() -> Node",
+      "params": [],
+      "returns": "Node",
+      "example": "root = doc.rootNode()",
+      "version_compat": ["5.0+"],
+      "pitfalls": []
+    },
+    {
+      "name": "Document.setActiveNode",
+      "category": "document",
+      "description": "Set the active node.",
+      "signature": "doc.setActiveNode(node)",
+      "params": [{"name": "node", "type": "Node"}],
+      "returns": "bool",
+      "example": "doc.setActiveNode(layer)",
+      "version_compat": ["5.0+"],
+      "pitfalls": []
+    },
+    {
+      "name": "Document.width",
+      "category": "document",
+      "description": "Document width in pixels.",
+      "signature": "doc.width() -> int",
+      "params": [],
+      "returns": "int",
+      "example": "w = doc.width()",
+      "version_compat": ["5.0+"],
+      "pitfalls": []
+    },
+    {
+      "name": "Document.height",
+      "category": "document",
+      "description": "Document height in pixels.",
+      "signature": "doc.height() -> int",
+      "params": [],
+      "returns": "int",
+      "example": "h = doc.height()",
+      "version_compat": ["5.0+"],
+      "pitfalls": []
+    },
+    {
+      "name": "Document.refreshProjection",
+      "category": "document",
+      "description": "Refresh the projection so edits become visible.",
+      "signature": "doc.refreshProjection()",
+      "params": [],
+      "returns": "none",
+      "example": "doc.refreshProjection()",
+      "version_compat": ["5.0+"],
+      "pitfalls": ["MUST be called after pixel operations or changes won't display."]
+    },
+    {
+      "name": "Document.scaleImage",
+      "category": "document",
+      "description": "Scale the whole document.",
+      "signature": "doc.scaleImage(newWidth, newHeight, filter)",
+      "params": [{"name": "filter", "type": "int", "example": "1"}],
+      "returns": "none",
+      "example": "doc.scaleImage(1920, 1080, 1)",
+      "version_compat": ["5.0+"],
+      "pitfalls": []
+    },
+    {
+      "name": "Document.rotateImage",
+      "category": "document",
+      "description": "Rotate the document by degrees.",
+      "signature": "doc.rotateImage(degrees)",
+      "params": [{"name": "degrees", "type": "float"}],
+      "returns": "none",
+      "example": "doc.rotateImage(90.0)",
+      "version_compat": ["5.0+"],
+      "pitfalls": []
+    },
+    {
+      "name": "Document.exportImage",
+      "category": "document",
+      "description": "Export the document to a file path.",
+      "signature": "doc.exportImage(path, InfoObject)",
+      "params": [{"name": "path", "type": "str"}, {"name": "InfoObject", "type": "InfoObject"}],
+      "returns": "bool",
+      "example": "doc.exportImage('/tmp/out.png', app.createInfoObject())",
+      "version_compat": ["5.0+"],
+      "pitfalls": ["File format is inferred from the extension."]
+    },
+    {
+      "name": "Document.createNode",
+      "category": "node",
+      "description": "Create a new node of a given type.",
+      "signature": "doc.createNode(name, type) -> Node",
+      "params": [
+        {"name": "name", "type": "str"},
+        {"name": "type", "type": "str", "example": "paintlayer | grouplayer | vectorlayer | filtermask | transparencymask"}
+      ],
+      "returns": "Node",
+      "example": "layer = doc.createNode('Sketch', 'paintlayer')",
+      "version_compat": ["5.0+"],
+      "pitfalls": ["The node is NOT added to the document until addChildNode is called."]
+    },
+    {
+      "name": "Node.addChildNode",
+      "category": "node",
+      "description": "Add a child node to a layer group.",
+      "signature": "node.addChildNode(child, parent)",
+      "params": [{"name": "child", "type": "Node"}, {"name": "parent", "type": "Node|None"}],
+      "returns": "bool",
+      "example": "root.addChildNode(layer, None)",
+      "version_compat": ["5.0+"],
+      "pitfalls": ["parent=None adds at the top of the group."]
+    },
+    {
+      "name": "Node.childNodes",
+      "category": "node",
+      "description": "List child nodes.",
+      "signature": "node.childNodes() -> list[Node]",
+      "params": [],
+      "returns": "list",
+      "example": "for child in root.childNodes(): print(child.name())",
+      "version_compat": ["5.0+"],
+      "pitfalls": []
+    },
+    {
+      "name": "Node.duplicate",
+      "category": "node",
+      "description": "Duplicate a node (returns a detached copy).",
+      "signature": "node.duplicate() -> Node",
+      "params": [],
+      "returns": "Node",
+      "example": "copy = node.duplicate()",
+      "version_compat": ["5.0+"],
+      "pitfalls": ["The copy must be added to the document separately."]
+    },
+    {
+      "name": "Node.setOpacity",
+      "category": "node",
+      "description": "Set node opacity (0.0 - 1.0).",
+      "signature": "node.setOpacity(opacity)",
+      "params": [{"name": "opacity", "type": "float"}],
+      "returns": "bool",
+      "example": "layer.setOpacity(0.7)",
+      "version_compat": ["5.0+"],
+      "pitfalls": ["Krita uses 0..1 float, unlike GIMP's 0..100 percentage."]
+    },
+    {
+      "name": "Node.setBlendingMode",
+      "category": "node",
+      "description": "Set node blending mode.",
+      "signature": "node.setBlendingMode(mode)",
+      "params": [{"name": "mode", "type": "str", "example": "normal | screen | multiply | overlay | soft_light"}],
+      "returns": "bool",
+      "example": "layer.setBlendingMode('screen')",
+      "version_compat": ["5.0+"],
+      "pitfalls": ["Mode names are lowercase with underscores (soft_light, hard_light)."]
+    },
+    {
+      "name": "Node.setVisible",
+      "category": "node",
+      "description": "Show or hide a node.",
+      "signature": "node.setVisible(visible)",
+      "params": [{"name": "visible", "type": "bool"}],
+      "returns": "bool",
+      "example": "layer.setVisible(False)",
+      "version_compat": ["5.0+"],
+      "pitfalls": []
+    },
+    {
+      "name": "Node.setPixelData",
+      "category": "node",
+      "description": "Set raw pixel data for a region of a paint layer.",
+      "signature": "node.setPixelData(bytes, x, y, width, height)",
+      "params": [
+        {"name": "bytes", "type": "bytes", "example": "BGRA order for 8-bit RGBA"},
+        {"name": "x/y/width/height", "type": "int"}
+      ],
+      "returns": "bool",
+      "example": "layer.setPixelData(pixel_bytes, 0, 0, w, h)",
+      "version_compat": ["5.0+"],
+      "pitfalls": ["Byte order is BGRA, not RGBA - a common source of color bugs."]
+    },
+    {
+      "name": "Node.type",
+      "category": "node",
+      "description": "Get node type string.",
+      "signature": "node.type() -> str",
+      "params": [],
+      "returns": "str",
+      "example": "if node.type() == 'paintlayer': ...",
+      "version_compat": ["5.0+"],
+      "pitfalls": []
+    },
+    {
+      "name": "Document.selection",
+      "category": "selection",
+      "description": "Get the document selection object.",
+      "signature": "doc.selection() -> Selection",
+      "params": [],
+      "returns": "Selection",
+      "example": "sel = doc.selection()",
+      "version_compat": ["5.0+"],
+      "pitfalls": ["Selection methods: selectAll(), clear(), invert(), grow(), etc."]
+    },
+    {
+      "name": "Selection.selectAll",
+      "category": "selection",
+      "description": "Select the whole document.",
+      "signature": "sel.selectAll()",
+      "params": [],
+      "returns": "none",
+      "example": "doc.selection().selectAll()",
+      "version_compat": ["5.0+"],
+      "pitfalls": []
+    },
+    {
+      "name": "Node.mergeAllVisibleLayers",
+      "category": "node",
+      "description": "Merge all visible child layers into one.",
+      "signature": "group.mergeAllVisibleLayers() -> bool",
+      "params": [],
+      "returns": "bool",
+      "example": "doc.rootNode().mergeAllVisibleLayers()",
+      "version_compat": ["5.0+"],
+      "pitfalls": []
+    }
+  ]
+}

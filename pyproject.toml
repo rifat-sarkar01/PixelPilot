@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pixelpilot"
+version = "0.1.0"
+description = "Local Ollama-powered photo editor controller. Natural language -> executable GIMP/Krita scripts. 100% offline."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "PixelPilot Contributors" }]
+keywords = ["ollama", "gimp", "krita", "llm", "image-editing", "ai", "local", "offline"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Graphics :: Editors",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "httpx>=0.27",
+    "rich>=13.7",
+    "prompt_toolkit>=3.0.43",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.2",
+    "PyYAML>=6.0",
+    "Pillow>=10.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/pixelpilot/pixelpilot"
+Documentation = "https://github.com/pixelpilot/pixelpilot#readme"
+
+[project.scripts]
+pixelpilot = "pixelpilot.main:main"
+
+[project.optional-dependencies]
+rag = ["chromadb>=0.5"]
+gpu = ["pynvml>=11"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "pytest-mock>=3.12", "ruff>=0.4"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pixelpilot = [
+    "knowledge/*.json",
+    "knowledge/examples/**/*.py",
+    "prompts/templates/*.txt",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100

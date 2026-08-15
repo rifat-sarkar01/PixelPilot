@@ -1,0 +1,15 @@
+CURRENT CANVAS STATE
+--------------------
+$canvas_state
+
+RELEVANT API PROCEDURES
+-----------------------
+$procedures
+
+FEW-SHOT EXAMPLE (follow its style)
+-----------------------------------
+$example
+
+CONVERSATION HISTORY
+--------------------
+$history

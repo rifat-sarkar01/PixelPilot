@@ -1,0 +1,692 @@
+{
+  "meta": {
+    "description": "Curated starter catalog of common GIMP PDB procedures for PixelPilot RAG and API hallucination validation.",
+    "version_compat_notes": "'signature' uses the classic gimpfu/pdb call style (works in GIMP 2.10 Python-Fu and GIMP 3.x's gimpfu shim). 'gimp3_signature' notes the GObject-Introspection style used by GIMP 3 native Python plugins where known."
+  },
+  "procedures": [
+    {
+      "name": "gimp-image-list",
+      "category": "image",
+      "description": "List all open images. First result is the primary canvas.",
+      "signature": "gimp.image_list() -> list of image",
+      "gimp3_signature": "Gimp.get_images()",
+      "params": [],
+      "returns": "list",
+      "example": "image = gimp.image_list()[0]",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["Index [0] is the most recently created image, not necessarily the active one."]
+    },
+    {
+      "name": "gimp-image-width",
+      "legacy_name": "gimp-image-get-width",
+      "category": "image",
+      "description": "Return the width of an image in pixels.",
+      "signature": "pdb.gimp_image_width(image) -> int",
+      "params": [{"name": "image", "type": "image"}],
+      "returns": "int",
+      "example": "w = pdb.gimp_image_width(image)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["There is NO gimp_image_get_width in Python-Fu - use pdb.gimp_image_width(image)."]
+    },
+    {
+      "name": "gimp-image-height",
+      "legacy_name": "gimp-image-get-height",
+      "category": "image",
+      "description": "Return the height of an image in pixels.",
+      "signature": "pdb.gimp_image_height(image) -> int",
+      "params": [{"name": "image", "type": "image"}],
+      "returns": "int",
+      "example": "h = pdb.gimp_image_height(image)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["There is NO gimp_image_get_height in Python-Fu - use pdb.gimp_image_height(image)."]
+    },
+    {
+      "name": "gimp-image-undo-group-start",
+      "category": "image",
+      "description": "Start an undo group so many operations undo as one step.",
+      "signature": "pdb.gimp_image_undo_group_start(image)",
+      "params": [{"name": "image", "type": "image"}],
+      "returns": "none",
+      "example": "pdb.gimp_image_undo_group_start(image)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["Always pair with gimp_image_undo_group_end, ideally in try/finally."]
+    },
+    {
+      "name": "gimp-image-undo-group-end",
+      "category": "image",
+      "description": "End an undo group.",
+      "signature": "pdb.gimp_image_undo_group_end(image)",
+      "params": [{"name": "image", "type": "image"}],
+      "returns": "none",
+      "example": "pdb.gimp_image_undo_group_end(image)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "gimp-image-flatten",
+      "category": "image",
+      "description": "Flatten all layers into a single background layer.",
+      "signature": "pdb.gimp_image_flatten(image)",
+      "params": [{"name": "image", "type": "image"}],
+      "returns": "drawable",
+      "example": "pdb.gimp_image_flatten(image)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["Destructive - merges everything. Consider duplicating first."]
+    },
+    {
+      "name": "gimp-image-duplicate",
+      "category": "image",
+      "description": "Duplicate the whole image.",
+      "signature": "pdb.gimp_image_duplicate(image)",
+      "params": [{"name": "image", "type": "image"}],
+      "returns": "image",
+      "example": "copy = pdb.gimp_image_duplicate(image)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "gimp-image-scale-full",
+      "category": "transform",
+      "description": "Scale the whole image to new dimensions.",
+      "signature": "pdb.gimp_image_scale_full(image, new_width, new_height, interpolation)",
+      "params": [
+        {"name": "new_width", "type": "int"},
+        {"name": "new_height", "type": "int"},
+        {"name": "interpolation", "type": "enum", "example": "INTERPOLATION_CUBIC"}
+      ],
+      "returns": "none",
+      "example": "pdb.gimp_image_scale_full(image, 1920, 1080, INTERPOLATION_CUBIC)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["INTERPOLATION_* constants come from gimpfu."]
+    },
+    {
+      "name": "gimp-image-convert-rgb",
+      "category": "image",
+      "description": "Convert the image to RGB color mode (needed before many filters).",
+      "signature": "pdb.gimp_image_convert_rgb(image)",
+      "params": [{"name": "image", "type": "image"}],
+      "returns": "none",
+      "example": "pdb.gimp_image_convert_rgb(image)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["Many plug-ins silently fail or behave oddly in non-RGB modes."]
+    },
+    {
+      "name": "gimp-layer-new",
+      "category": "layers",
+      "description": "Create a new layer of given size, type, opacity and blend mode.",
+      "signature": "pdb.gimp_layer_new(image, width, height, type, name, opacity, mode)",
+      "params": [
+        {"name": "type", "type": "enum", "example": "RGBA_IMAGE"},
+        {"name": "opacity", "type": "float", "example": "100.0"},
+        {"name": "mode", "type": "enum", "example": "NORMAL_MODE"}
+      ],
+      "returns": "layer",
+      "example": "layer = pdb.gimp_layer_new(image, 800, 600, RGBA_IMAGE, 'Blur', 100.0, NORMAL_MODE)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": [
+        "The new layer is NOT inserted automatically - call gimp_image_insert_layer.",
+        "CRITICAL for scene composition: RGB_IMAGE layers have NO alpha channel and initialize opaque black - they hide every layer below them. Use RGBA_IMAGE for layers that are only partially painted (sun, clouds, mountains) so unpainted areas stay transparent."
+      ]
+    },
+    {
+      "name": "gimp-image-insert-layer",
+      "category": "layers",
+      "description": "Insert a layer into the image's layer stack.",
+      "signature": "pdb.gimp_image_insert_layer(image, layer, parent, position)",
+      "params": [{"name": "parent", "type": "group|null"}, {"name": "position", "type": "int", "example": "-1"}],
+      "returns": "none",
+      "example": "pdb.gimp_image_insert_layer(image, layer, None, -1)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["position -1 appends to the top of the stack."]
+    },
+    {
+      "name": "gimp-layer-copy",
+      "category": "layers",
+      "description": "Duplicate a layer, optionally adding an alpha channel.",
+      "signature": "pdb.gimp_layer_copy(layer, add_alpha)",
+      "params": [{"name": "add_alpha", "type": "int", "example": "1"}],
+      "returns": "layer",
+      "example": "copy = pdb.gimp_layer_copy(source, 1)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["The copy must still be inserted into the image."]
+    },
+    {
+      "name": "gimp-layer-merge-down",
+      "category": "layers",
+      "description": "Merge the active layer down into the one below.",
+      "signature": "pdb.gimp_image_merge_down(image, drawable, merge_type)",
+      "params": [{"name": "merge_type", "type": "int", "example": "0"}],
+      "returns": "drawable",
+      "example": "merged = pdb.gimp_image_merge_down(image, drawable, 0)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "gimp-layer-set-offsets",
+      "legacy_name": "gimp-layer-set-offset",
+      "category": "layers",
+      "description": "Move a layer by setting its offset relative to the image top-left.",
+      "signature": "pdb.gimp_layer_set_offsets(layer, off_x, off_y)",
+      "params": [{"name": "off_x", "type": "int"}, {"name": "off_y", "type": "int"}],
+      "returns": "none",
+      "example": "pdb.gimp_layer_set_offsets(layer, 50, 50)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["The procedure name is plural: gimp_layer_set_offsets (there is no singular gimp_layer_set_offset)."]
+    },
+    {
+      "name": "gimp-layer-set-opacity",
+      "category": "layers",
+      "description": "Set a layer's opacity percentage.",
+      "signature": "pdb.gimp_layer_set_opacity(layer, opacity)",
+      "params": [{"name": "opacity", "type": "float", "example": "70.0"}],
+      "returns": "none",
+      "example": "pdb.gimp_layer_set_opacity(layer, 70.0)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "gimp-layer-set-mode",
+      "category": "layers",
+      "description": "Set a layer's blend mode (SCREEN_MODE, MULTIPLY_MODE, etc.).",
+      "signature": "pdb.gimp_layer_set_mode(layer, mode)",
+      "params": [{"name": "mode", "type": "enum", "example": "SCREEN_MODE"}],
+      "returns": "none",
+      "example": "pdb.gimp_layer_set_mode(layer, SCREEN_MODE)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["Mode constants live in gimpfu (NORMAL_MODE, SCREEN_MODE, MULTIPLY_MODE, OVERLAY_MODE, ...)."]
+    },
+    {
+      "name": "gimp-item-set-visible",
+      "category": "layers",
+      "description": "Show or hide a layer/item.",
+      "signature": "pdb.gimp_item_set_visible(item, visible)",
+      "params": [{"name": "visible", "type": "int", "example": "1"}],
+      "returns": "none",
+      "example": "pdb.gimp_item_set_visible(layer, 0)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "gimp-item-set-name",
+      "category": "layers",
+      "description": "Rename a layer/item.",
+      "signature": "pdb.gimp_item_set_name(item, name)",
+      "params": [{"name": "name", "type": "str"}],
+      "returns": "none",
+      "example": "pdb.gimp_item_set_name(layer, 'Highlights')",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "gimp-image-get-active-layer",
+      "category": "layers",
+      "description": "Get the currently active layer.",
+      "signature": "pdb.gimp_image_get_active_layer(image)",
+      "params": [{"name": "image", "type": "image"}],
+      "returns": "layer",
+      "example": "layer = pdb.gimp_image_get_active_layer(image)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "gimp-image-get-layers",
+      "category": "layers",
+      "description": "List all top-level layers in the image.",
+      "signature": "pdb.gimp_image_get_layers(image)",
+      "params": [{"name": "image", "type": "image"}],
+      "returns": "list of layer",
+      "example": "for layer in pdb.gimp_image_get_layers(image): print(layer.name)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "gimp-image-select-color",
+      "category": "selections",
+      "description": "Select all pixels in the drawable whose color matches.",
+      "signature": "pdb.gimp_image_select_color(image, operation, drawable, color, threshold)",
+      "params": [
+        {"name": "operation", "type": "enum", "example": "CHANNEL_OP_REPLACE"},
+        {"name": "color", "type": "tuple", "example": "(255, 0, 0, 255)"},
+        {"name": "threshold", "type": "float", "example": "15.0"}
+      ],
+      "returns": "none",
+      "example": "pdb.gimp_image_select_color(image, CHANNEL_OP_REPLACE, drawable, (255, 0, 0, 255), 15.0)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["Color is RGBA tuple. Larger threshold selects a wider range."]
+    },
+    {
+      "name": "gimp-selection-invert",
+      "category": "selections",
+      "description": "Invert the current selection.",
+      "signature": "pdb.gimp_selection_invert(image)",
+      "params": [{"name": "image", "type": "image"}],
+      "returns": "none",
+      "example": "pdb.gimp_selection_invert(image)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "gimp-selection-all",
+      "category": "selections",
+      "description": "Select the entire canvas.",
+      "signature": "pdb.gimp_selection_all(image)",
+      "params": [{"name": "image", "type": "image"}],
+      "returns": "none",
+      "example": "pdb.gimp_selection_all(image)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "gimp-selection-none",
+      "category": "selections",
+      "description": "Clear the current selection.",
+      "signature": "pdb.gimp_selection_none(image)",
+      "params": [{"name": "image", "type": "image"}],
+      "returns": "none",
+      "example": "pdb.gimp_selection_none(image)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "gimp-selection-grow",
+      "category": "selections",
+      "description": "Grow the selection by a number of pixels.",
+      "signature": "pdb.gimp_selection_grow(image, steps)",
+      "params": [{"name": "steps", "type": "int"}],
+      "returns": "none",
+      "example": "pdb.gimp_selection_grow(image, 5)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "gimp-selection-feather",
+      "category": "selections",
+      "description": "Feather the selection edges by a radius.",
+      "signature": "pdb.gimp_selection_feather(image, radius)",
+      "params": [{"name": "radius", "type": "float"}],
+      "returns": "none",
+      "example": "pdb.gimp_selection_feather(image, 5.0)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "gimp-image-select-ellipse",
+      "legacy_name": "gimp-selection-ellipse",
+      "category": "selections",
+      "description": "Select an elliptical region on the image. The standard way to create circular/oval selections for vignettes, round crops, etc.",
+      "signature": "pdb.gimp_image_select_ellipse(image, operation, x, y, width, height)",
+      "params": [
+        {"name": "operation", "type": "enum", "example": "CHANNEL_OP_REPLACE"},
+        {"name": "x", "type": "int"},
+        {"name": "y", "type": "int"},
+        {"name": "width", "type": "int"},
+        {"name": "height", "type": "int"}
+      ],
+      "returns": "none",
+      "example": "pdb.gimp_image_select_ellipse(image, CHANNEL_OP_REPLACE, 100, 100, 600, 400)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": [
+        "CRITICAL: there is NO pdb.gimp_selection_ellipse in Python-Fu - that name only exists in Script-Fu. The correct Python-Fu call is pdb.gimp_image_select_ellipse(image, operation, x, y, width, height).",
+        "operation is a CHANNEL_OP_* constant: CHANNEL_OP_REPLACE, CHANNEL_OP_ADD, CHANNEL_OP_SUBTRACT, CHANNEL_OP_INTERSECT.",
+        "There is also no pdb.gimp_ellipse_select(canvas_w, canvas_h, w, h, cx, cy, antialias, from_center) and no FROM_CENTER constant. Pass explicit top-left x, y and CHANNEL_OP_REPLACE."
+      ]
+    },
+    {
+      "name": "gimp-image-new",
+      "category": "image",
+      "description": "Create a brand new empty RGB image. Required to generate scenes from scratch.",
+      "signature": "pdb.gimp_image_new(width, height, type)",
+      "params": [
+        {"name": "width", "type": "int", "example": "1200"},
+        {"name": "height", "type": "int", "example": "800"},
+        {"name": "type", "type": "enum", "example": "RGB"}
+      ],
+      "returns": "image",
+      "example": "image = pdb.gimp_image_new(1200, 800, RGB)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": [
+        "A new image has no layers: insert at least one layer with pdb.gimp_layer_new + pdb.gimp_image_insert_layer, and make it visible on screen with pdb.gimp_display_new(image).",
+        "type is RGB (0) or RGBA (1); constants RGB_IMAGE and RGBA_IMAGE also work."
+      ]
+    },
+    {
+      "name": "gimp-edit-blend",
+      "category": "paint",
+      "description": "Fill a drawable with a gradient between the context foreground and background colors.",
+      "signature": "pdb.gimp_edit_blend(drawable, blend_mode, paint_mode, gradient_type, opacity, offset, repeat, reverse, supersample, max_depth, src_x, src_y, dst_x, dst_y, blend_space, gradient_transform)",
+      "params": [
+        {"name": "blend_mode", "type": "enum", "example": "BLEND_FG_BG_RGB"},
+        {"name": "paint_mode", "type": "int", "example": "0"},
+        {"name": "gradient_type", "type": "enum", "example": "GRADIENT_LINEAR"},
+        {"name": "opacity", "type": "float", "example": "100"},
+        {"name": "offset", "type": "float", "example": "0"},
+        {"name": "repeat", "type": "enum", "example": "REPEAT_NONE"},
+        {"name": "reverse", "type": "bool", "example": "True"},
+        {"name": "supersample", "type": "bool", "example": "False"},
+        {"name": "max_depth", "type": "int", "example": "3"},
+        {"name": "src_x", "type": "int", "example": "0"},
+        {"name": "src_y", "type": "int", "example": "0"},
+        {"name": "dst_x", "type": "int", "example": "1200"},
+        {"name": "dst_y", "type": "int", "example": "800"},
+        {"name": "blend_space", "type": "enum", "example": "0"},
+        {"name": "gradient_transform", "type": "enum", "example": "0"}
+      ],
+      "returns": "none",
+      "example": "pdb.gimp_edit_blend(sky, BLEND_FG_BG_RGB, 0, GRADIENT_LINEAR, 100, 0, REPEAT_NONE, True, False, 3, 0, 0, 1200, 800, 0, 0)",
+      "version_compat": ["2.10"],
+      "pitfalls": [
+        "CRITICAL: requires all 16 arguments: drawable + 15 params including src_x, src_y, dst_x, dst_y gradient endpoints and the trailing blend_space (0) and gradient_transform (0) - any missing raise TypeError.",
+        "A bridge runtime alias also tolerates shorter model-style forms (missing paint_mode/offset/endpoints, which default to 0 and the drawable diagonal).",
+        "blend_mode uses BLEND_FG_BG_RGB (0), BLEND_FG_BG_HSV (1), BLEND_FG_TRANSPARENT (2) or BLEND_CUSTOM (3). There is NO FG_BG_LINEAR_BLEND or FG_BG_RGB_BLEND constant in GIMP 2.10.",
+        "paint_mode must be an int, typically 0 (PAINT_MODE_NORMAL does not exist in 2.10).",
+        "gradient_type GRADIENT_LINEAR (0) or GRADIENT_SOLID (1); repeat REPEAT_NONE (0) or REPEAT_SAWTOOTH (1)."
+      ]
+    },
+    {
+      "name": "gimp-pencil",
+      "category": "paint",
+      "description": "Draw a polyline on a drawable with the context foreground color.",
+      "signature": "pdb.gimp_pencil(drawable, num_points, points_array)",
+      "params": [
+        {"name": "num_points", "type": "int"},
+        {"name": "points_array", "type": "list", "example": "[10, 20, 300, 400]"}
+      ],
+      "returns": "none",
+      "example": "pdb.gimp_pencil(layer, 2, [10, 500, 1150, 500])",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": [
+        "points_array is a single FLAT list of x,y pairs: [x0, y0, x1, y1, ...]. It is NOT separate x and y lists.",
+        "Use pdb.gimp_context_set_foreground((r, g, b)) first to set the line color."
+      ]
+    },
+    {
+      "name": "gimp-drawable-fill",
+      "category": "paint",
+      "description": "Fill a drawable with the current background, foreground, white or transparency.",
+      "signature": "pdb.gimp_drawable_fill(drawable, fill_type)",
+      "params": [
+        {"name": "fill_type", "type": "enum", "example": "FOREGROUND_FILL"}
+      ],
+      "returns": "none",
+      "example": "pdb.gimp_context_set_foreground((255, 236, 199)); pdb.gimp_drawable_fill(ground, FOREGROUND_FILL)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": [
+        "fill_type is FOREGROUND_FILL (0), BACKGROUND_FILL (1), WHITE_FILL (2) or TRANSPARENT_FILL (3).",
+        "pdb.gimp_edit_fill(drawable, fill_type) also exists and fills the active selection; gimp_drawable_fill ignores the selection."
+      ]
+    },
+    {
+      "name": "gimp-context-set-background",
+      "category": "context",
+      "description": "Set the context background color, used by gradients and background fills.",
+      "signature": "pdb.gimp_context_set_background((r, g, b))",
+      "params": [{"name": "color", "type": "tuple", "example": "(255, 102, 178)"}],
+      "returns": "none",
+      "example": "pdb.gimp_context_set_background((255, 102, 178))",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["Pass an (r, g, b) tuple with values 0-255. Set foreground with pdb.gimp_context_set_foreground((r, g, b))."]
+    },
+    {
+      "name": "gimp-ellipse-select",
+      "category": "selections",
+      "description": "Model-shorthand for gimp_image_select_ellipse. Supported at runtime by an alias in the bridge plugin.",
+      "signature": "pdb.gimp_ellipse_select(image, operation, x, y, width, height)",
+      "params": [
+        {"name": "operation", "type": "enum", "example": "CHANNEL_OP_REPLACE"},
+        {"name": "x", "type": "int"},
+        {"name": "y", "type": "int"},
+        {"name": "width", "type": "int"},
+        {"name": "height", "type": "int"}
+      ],
+      "returns": "none",
+      "example": "pdb.gimp_ellipse_select(image, CHANNEL_OP_REPLACE, 100, 100, 600, 400)",
+      "version_compat": ["2.10"],
+      "pitfalls": [
+        "Prefer the canonical pdb.gimp_image_select_ellipse(image, operation, x, y, width, height) form.",
+        "Do NOT use a GIMP-3 style gimp_ellipse_select(canvas_w, canvas_h, w, h, cx, cy, antialias, from_center) call and do not pass FROM_CENTER."
+      ]
+    },
+    {
+      "name": "gimp-image-select-rectangle",
+      "legacy_name": "gimp-selection-rectangle",
+      "category": "selections",
+      "description": "Select a rectangular region on the image.",
+      "signature": "pdb.gimp_image_select_rectangle(image, operation, x, y, width, height)",
+      "params": [
+        {"name": "operation", "type": "enum", "example": "CHANNEL_OP_REPLACE"},
+        {"name": "x", "type": "int"},
+        {"name": "y", "type": "int"},
+        {"name": "width", "type": "int"},
+        {"name": "height", "type": "int"}
+      ],
+      "returns": "none",
+      "example": "pdb.gimp_image_select_rectangle(image, CHANNEL_OP_REPLACE, 50, 50, 400, 300)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": [
+        "CRITICAL: there is NO pdb.gimp_selection_rectangle in Python-Fu - use pdb.gimp_image_select_rectangle(image, operation, x, y, width, height)."
+      ]
+    },
+    {
+      "name": "gimp-image-select-round-rectangle",
+      "category": "selections",
+      "description": "Select a rectangle with rounded corners on the image.",
+      "signature": "pdb.gimp_image_select_round_rectangle(image, operation, x, y, width, height, corner_radius_x, corner_radius_y)",
+      "params": [
+        {"name": "operation", "type": "enum", "example": "CHANNEL_OP_REPLACE"},
+        {"name": "corner_radius_x", "type": "float"},
+        {"name": "corner_radius_y", "type": "float"}
+      ],
+      "returns": "none",
+      "example": "pdb.gimp_image_select_round_rectangle(image, CHANNEL_OP_REPLACE, 50, 50, 400, 300, 20, 20)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "gimp-selection-shrink",
+      "category": "selections",
+      "description": "Shrink the current selection inward by a number of pixels.",
+      "signature": "pdb.gimp_selection_shrink(image, shrink_units)",
+      "params": [{"name": "shrink_units", "type": "int"}],
+      "returns": "none",
+      "example": "pdb.gimp_selection_shrink(image, 10)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["Only works when there is an active selection."]
+    },
+    {
+      "name": "gimp-selection-border",
+      "category": "selections",
+      "description": "Convert the current selection to a border of the given width.",
+      "signature": "pdb.gimp_selection_border(image, border_radius)",
+      "params": [{"name": "border_radius", "type": "int"}],
+      "returns": "none",
+      "example": "pdb.gimp_selection_border(image, 5)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "gimp-selection-translate",
+      "category": "selections",
+      "description": "Move the current selection by an offset.",
+      "signature": "pdb.gimp_selection_translate(image, off_x, off_y)",
+      "params": [{"name": "off_x", "type": "int"}, {"name": "off_y", "type": "int"}],
+      "returns": "none",
+      "example": "pdb.gimp_selection_translate(image, 25, 25)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "gimp-selection-combine",
+      "category": "selections",
+      "description": "Combine the current selection with the saved channel in the given channel-op mode.",
+      "signature": "pdb.gimp_selection_combine(image, channel_op)",
+      "params": [{"name": "channel_op", "type": "enum", "example": "CHANNEL_OP_ADD"}],
+      "returns": "none",
+      "example": "pdb.gimp_selection_combine(image, CHANNEL_OP_ADD)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "gimp-brightness-contrast",
+      "category": "colors",
+      "description": "Adjust brightness and contrast of a drawable.",
+      "signature": "pdb.gimp_brightness_contrast(drawable, brightness, contrast)",
+      "params": [{"name": "brightness", "type": "float"}, {"name": "contrast", "type": "float"}],
+      "returns": "none",
+      "example": "pdb.gimp_brightness_contrast(drawable, 20, 15)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["Only affects the selected region."]
+    },
+    {
+      "name": "gimp-desaturate-full",
+      "category": "colors",
+      "description": "Convert a drawable to grayscale using a desaturation method.",
+      "signature": "pdb.gimp_desaturate_full(drawable, desaturate_mode)",
+      "params": [{"name": "desaturate_mode", "type": "int", "example": "0 (luminosity)"}],
+      "returns": "none",
+      "example": "pdb.gimp_desaturate_full(drawable, 0)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["0=luminosity, 1=average, 2=lightness."]
+    },
+    {
+      "name": "gimp-levels",
+      "category": "colors",
+      "description": "Adjust levels (input/output range, gamma) for a channel.",
+      "signature": "pdb.gimp_levels(drawable, channel, low_input, high_input, gamma, low_output, high_output)",
+      "params": [
+        {"name": "channel", "type": "enum", "example": "HISTOGRAM_VALUE"},
+        {"name": "gamma", "type": "float"}
+      ],
+      "returns": "none",
+      "example": "pdb.gimp_levels(drawable, HISTOGRAM_VALUE, 0, 255, 1.3, 0, 255)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["HISTOGRAM_VALUE = value channel; use HISTOGRAM_RED/GREEN/BLUE for per-channel."]
+    },
+    {
+      "name": "gimp-hue-saturation",
+      "category": "colors",
+      "description": "Adjust hue, saturation and lightness over a hue range.",
+      "signature": "pdb.gimp_hue_saturation(drawable, hue_range, hue_offset, saturation, lightness)",
+      "params": [
+        {"name": "hue_range", "type": "enum", "example": "HUE_RANGE_ALL"},
+        {"name": "saturation", "type": "float"}
+      ],
+      "returns": "none",
+      "example": "pdb.gimp_hue_saturation(drawable, HUE_RANGE_ALL, 0, 30, 0)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["Saturation scale is -100..100."]
+    },
+    {
+      "name": "gimp-colorize",
+      "category": "colors",
+      "description": "Colorize a drawable with a hue/saturation/lightness tint.",
+      "signature": "pdb.gimp_colorize(drawable, hue, saturation, lightness)",
+      "params": [{"name": "hue", "type": "float"}, {"name": "saturation", "type": "float"}, {"name": "lightness", "type": "float"}],
+      "returns": "none",
+      "example": "pdb.gimp_colorize(drawable, 180, 60, 0)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["A common way to tint images (sepia, cyan, etc.)."]
+    },
+    {
+      "name": "plug-in-gauss",
+      "category": "filters",
+      "description": "Apply a Gaussian blur.",
+      "signature": "pdb.plug_in_gauss(image, drawable, radius_x, radius_y, horizontal)",
+      "params": [{"name": "radius_x", "type": "float"}, {"name": "radius_y", "type": "float"}],
+      "returns": "none",
+      "example": "pdb.plug_in_gauss(image, drawable, 5.0, 5.0, 0)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["Only affects the selected region."]
+    },
+    {
+      "name": "plug-in-unsharp-mask",
+      "category": "filters",
+      "description": "Sharpen using unsharp mask.",
+      "signature": "pdb.plug_in_unsharp_mask(image, drawable, radius, amount, threshold)",
+      "params": [{"name": "radius", "type": "float"}, {"name": "amount", "type": "float"}, {"name": "threshold", "type": "float"}],
+      "returns": "none",
+      "example": "pdb.plug_in_unsharp_mask(image, drawable, 2.0, 0.5, 0)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "plug-in-noise",
+      "category": "filters",
+      "description": "Add uniform random noise to a drawable.",
+      "signature": "pdb.plug_in_noise(image, drawable, amount, independent, seed)",
+      "params": [{"name": "amount", "type": "float"}],
+      "returns": "none",
+      "example": "pdb.plug_in_noise(image, drawable, 0.2, 0, 0)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "gimp-item-transform-flip-simple",
+      "category": "transform",
+      "description": "Flip an item horizontally or vertically.",
+      "signature": "pdb.gimp_item_transform_flip_simple(item, flip_type, auto_center, axis)",
+      "params": [{"name": "flip_type", "type": "int", "example": "1=horizontal, 0=vertical"}],
+      "returns": "item",
+      "example": "pdb.gimp_item_transform_flip_simple(layer, 1, 1, 0)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "gimp-item-transform-rotate-simple",
+      "category": "transform",
+      "description": "Rotate an item by an angle in degrees.",
+      "signature": "pdb.gimp_item_transform_rotate_simple(item, angle, auto_center, axis)",
+      "params": [{"name": "angle", "type": "float"}],
+      "returns": "item",
+      "example": "pdb.gimp_item_transform_rotate_simple(layer, 90.0, 1, 0)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "gimp-edit-fill",
+      "category": "edit",
+      "description": "Fill the selection (or drawable) with the foreground/background color.",
+      "signature": "pdb.gimp_edit_fill(drawable, fill_type)",
+      "params": [{"name": "fill_type", "type": "enum", "example": "FOREGROUND_FILL"}],
+      "returns": "none",
+      "example": "pdb.gimp_context_set_foreground((255, 0, 0, 255)); pdb.gimp_edit_fill(drawable, FOREGROUND_FILL)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["Set the color first with gimp_context_set_foreground."]
+    },
+    {
+      "name": "gimp-context-set-foreground",
+      "category": "context",
+      "description": "Set the foreground color used by tools and fills.",
+      "signature": "pdb.gimp_context_set_foreground(color)",
+      "params": [{"name": "color", "type": "tuple", "example": "(255, 0, 0, 255)"}],
+      "returns": "none",
+      "example": "pdb.gimp_context_set_foreground((255, 0, 0, 255))",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": []
+    },
+    {
+      "name": "gimp-displays-flush",
+      "category": "display",
+      "description": "Refresh all open displays so edits are visible.",
+      "signature": "pdb.gimp_displays_flush()",
+      "params": [],
+      "returns": "none",
+      "example": "pdb.gimp_displays_flush()",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": ["ALWAYS call after pixel edits or the UI won't update."]
+    },
+    {
+      "name": "gimp-display-new",
+      "category": "display",
+      "description": "Open a new display window for an image so it becomes visible in the GIMP UI.",
+      "signature": "pdb.gimp_display_new(image)",
+      "params": [{"name": "image", "type": "image"}],
+      "returns": "display",
+      "example": "pdb.gimp_display_new(image)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": [
+        "MANDATORY when you create a brand-new image with gimp-image-new: without gimp_display_new(image) the image exists only in memory and GIMP shows a blank window. Call it right after building the canvas, then pdb.gimp_displays_flush().",
+        "Also save the new image to disk with pdb.gimp_file_save(image, drawable, path, path) using an absolute path, or the work is lost when GIMP closes."
+      ]
+    }
+  ]
+}
