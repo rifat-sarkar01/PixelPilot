@@ -153,5 +153,28 @@ def test_genuinely_unknown_pdb_call_is_still_flagged():
     assert any("gimp_totally_made_up_call" in c for c in report.unknown_api_calls)
 
 
+def test_locally_defined_functions_not_flagged():
+    script = (
+        "def custom_draw_box(x, y, w, h):\n"
+        "    pass\n\n"
+        "custom_draw_box(10, 20, 30, 40)\n"
+    )
+    report = SafetyValidator(editor="gimp").validate(script)
+    assert report.warnings == []
+    assert report.unknown_api_calls == []
+
+
+def test_injected_shape_helpers_accepted():
+    script = (
+        "add_rectangle(10, 20, 100, 50, (255, 0, 0))\n"
+        "draw_circle(50, 50, 25)\n"
+        "pdb.add_rectangle(0, 0, 80, 80)\n"
+    )
+    report = SafetyValidator(editor="gimp").validate(script)
+    assert report.warnings == []
+    assert report.unknown_api_calls == []
+
+
 class SafetyReportStub:
     passed = True
+

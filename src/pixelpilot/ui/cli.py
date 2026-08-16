@@ -595,7 +595,11 @@ class PixelPilotCLI:
         procedures: list[dict] = []
         if self.ollama_ok:
             try:
-                procedures, _ = self._retrieve_context(error)
+                import re
+                words = re.findall(r"\b[a-zA-Z_]\w+\b", script)
+                api_words = [w for w in words if "gimp" in w.lower() or "select" in w.lower() or "layer" in w.lower() or "rect" in w.lower() or "ellipse" in w.lower()]
+                query = (" ".join(api_words[:6]) + " " + error).strip()
+                procedures, _ = self._retrieve_context(query)
             except Exception as exc:  # noqa: BLE001
                 self.console.print(f"[dim]RAG retrieval skipped: {exc}[/dim]")
         result = recovery.recover(script, error, self.tracker.state, procedures=procedures)

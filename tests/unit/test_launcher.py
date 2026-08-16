@@ -20,7 +20,7 @@ def test_repo_plugin_source_found():
 def test_gimp_plugin_dir_platform_specific(monkeypatch):
     monkeypatch.setattr(launcher.sys, "platform", "linux")
     monkeypatch.setattr(launcher.Path, "home", classmethod(lambda cls: launcher.Path("/home/u")))
-    assert str(launcher.gimp_plugin_dir()) == "/home/u/.config/GIMP/2.10/plug-ins"
+    assert launcher.gimp_plugin_dir() == launcher.Path("/home/u/.config/GIMP/2.10/plug-ins")
 
 
 def test_deploy_plugin_writes_executable_flat_file(tmp_path, monkeypatch):

@@ -1320,7 +1320,7 @@
       "name": "gimp-image-select-polygon",
       "category": "selections",
       "description": "Select a closed polygon region on the image, given as a flat list of x, y coordinates. The correct way to draw trapezoids, triangles, or any other angled shape - not gimp_edit_blend, which is for gradients and cannot create arbitrary polygon shapes at all.",
-      "signature": "pdb.gimp_image_select_polygon(image, operation, num_segs, segs)",
+      "signature": "pdb.gimp_image_select_polygon(image, operation, segs)",
       "params": [
         {
           "name": "operation",
@@ -1328,24 +1328,19 @@
           "example": "CHANNEL_OP_REPLACE"
         },
         {
-          "name": "num_segs",
-          "type": "int",
-          "example": "8  # total COUNT of numbers in segs, i.e. 2 x number of corners"
-        },
-        {
           "name": "segs",
           "type": "list[float]",
-          "example": "[x1, y1, x2, y2, x3, y3, x4, y4]  # flat, NOT a list of (x, y) tuples"
+          "example": "[x1, y1, x2, y2, x3, y3, x4, y4]  # flat list of float/int coordinates (do NOT pass num_segs in Python-Fu)"
         }
       ],
       "returns": "none",
-      "example": "points = [10, 100, 60, 20, 140, 20, 190, 100]\npdb.gimp_image_select_polygon(image, CHANNEL_OP_REPLACE, len(points), points)",
+      "example": "points = [10, 100, 60, 20, 140, 20, 190, 100]\npdb.gimp_image_select_polygon(image, CHANNEL_OP_REPLACE, points)",
       "version_compat": [
         "2.10",
         "3.0"
       ],
       "pitfalls": [
-        "num_segs is the total count of numbers in `segs` (2 per corner), not the number of corners - `len(points)` on the flat list is correct, not `len(points) // 2`.",
+        "In GIMP Python-Fu (gimpfu), pdb.gimp_image_select_polygon takes exactly 3 arguments: (image, operation, segs). Do NOT pass num_segs / len(points) as a 4th argument - pygimp calculates array length automatically and passing a 4th argument raises TypeError: wrong number of parameters.",
         "`segs` must be a FLAT list [x1, y1, x2, y2, ...], not a list of (x, y) tuples - passing tuples will fail.",
         "Do not use gimp_edit_blend to approximate an angled shape like a trapezoid - it is a gradient-fill call, not a shape tool, and its constants (blend mode, paint mode, repeat mode) are extremely easy to get wrong. Use this procedure instead, then fill the resulting selection the normal way with gimp_context_set_foreground + gimp_edit_fill."
       ]

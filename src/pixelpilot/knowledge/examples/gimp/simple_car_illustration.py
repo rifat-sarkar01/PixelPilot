@@ -44,7 +44,7 @@ try:
         roof_top_right_x, roof_top_y,
         roof_bottom_right_x, roof_bottom_y,
     ]
-    pdb.gimp_image_select_polygon(image, CHANNEL_OP_REPLACE, len(roof_points), roof_points)
+    pdb.gimp_image_select_polygon(image, CHANNEL_OP_REPLACE, roof_points)
     pdb.gimp_context_set_foreground((150, 20, 20))     # slightly darker red than the body
     pdb.gimp_edit_fill(drawable, FOREGROUND_FILL)
     pdb.gimp_selection_none(image)

@@ -15,10 +15,14 @@ GOTCHAS = """GIMP scripting rules (Python-Fu):
 7. New layers are added to the image with gimp.Layer(image, name, width, height, type, opacity, mode).
 8. Set the foreground color before filling: pdb.gimp_context_set_foreground((r, g, b)).
 9. Always pass the image drawable as the second argument to filters that require it.
-10. Selections: use pdb.gimp_image_select_ellipse(image, operation, x, y, width, height)
-    and pdb.gimp_image_select_rectangle(image, operation, x, y, width, height).
-    The Script-Fu names gimp_selection_ellipse / gimp_selection_rectangle do NOT exist
-    in Python-Fu and will fail at runtime.
+10. Selections and drawing shapes:
+    In GIMP Python-Fu, drawing a filled shape is a standard 4-step sequence:
+        1) pdb.gimp_image_select_rectangle(image, CHANNEL_OP_REPLACE, x, y, width, height)  # EXACTLY 6 arguments: image, operation, x, y, width, height
+           or pdb.gimp_image_select_ellipse(image, CHANNEL_OP_REPLACE, x, y, width, height)  # EXACTLY 6 arguments
+        2) pdb.gimp_context_set_foreground((r, g, b))  # EXACTLY 1 tuple argument: (r, g, b)
+        3) pdb.gimp_edit_fill(drawable, FOREGROUND_FILL)
+        4) pdb.gimp_selection_none(image)
+    Do not omit the operation parameter (use CHANNEL_OP_REPLACE).
 11. Do NOT wrap your code in a helper function like run_pixelpilot() - emit the code at
     top level so it runs immediately.
 12. When you CREATE a brand-new image with gimp_image_new, you MUST open a window for it:
@@ -87,12 +91,12 @@ GOTCHAS = """GIMP scripting rules (Python-Fu):
 19. For a trapezoid, triangle, or any other angled/non-rectangular shape (e.g. a car
     hood or roof), use gimp_image_select_polygon - do NOT reach for gimp_edit_blend for
     this, and do NOT use trigonometry (math.cos/math.sin) unless the angle genuinely
-    isn't a plain fraction of width/height. Its signature is
-    `gimp_image_select_polygon(image, operation, num_values, points)` where `points` is
-    a FLAT list of x, y, x, y, ... (num_values is the total count of numbers in that
-    list, i.e. 2x the number of corners - NOT the number of corners itself). Example: a
-    roof trapezoid, narrower at the top than the body it sits on, computed from plain
-    fractions with no trig:
+    isn't a plain fraction of width/height. In GIMP Python-Fu (gimpfu), its signature is
+    `pdb.gimp_image_select_polygon(image, operation, points)` taking EXACTLY 3 arguments
+    where `points` is a FLAT list of float or int coordinates [x1, y1, x2, y2, ...].
+    (Do NOT pass the count / len(points) as an extra argument in Python-Fu - pass
+    exactly: image, operation, points). Example: a roof trapezoid, narrower at the top
+    than the body it sits on, computed from plain fractions with no trig:
         roof_h = int(car_body_h * 0.35)
         roof_top_w = int(car_body_w * 0.5)
         roof_bottom_y = car_body_y
@@ -105,7 +109,7 @@ GOTCHAS = """GIMP scripting rules (Python-Fu):
                   roof_top_left_x, roof_top_y,
                   roof_top_right_x, roof_top_y,
                   roof_bottom_right_x, roof_bottom_y]
-        pdb.gimp_image_select_polygon(image, CHANNEL_OP_REPLACE, len(points), points)
+        pdb.gimp_image_select_polygon(image, CHANNEL_OP_REPLACE, points)
         pdb.gimp_context_set_foreground((r, g, b))
         pdb.gimp_edit_fill(drawable, FOREGROUND_FILL)
         pdb.gimp_selection_none(image)"""

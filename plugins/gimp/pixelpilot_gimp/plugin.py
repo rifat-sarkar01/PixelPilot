@@ -30,6 +30,11 @@ except ImportError:  # pragma: no cover - Python 3
     from io import StringIO
 
 try:
+    string_types = (str, unicode)
+except NameError:
+    string_types = (str,)
+
+try:
     from gimpfu import *
 except Exception:  # noqa: S110, BLE001 - imported outside GIMP (e.g. for linting)
     pass
@@ -79,27 +84,354 @@ HOST = "127.0.0.1"
 PORT = 10010
 
 
+def _parse_color(val):
+    if val is None:
+        return None
+    if isinstance(val, (tuple, list)):
+        if len(val) >= 3:
+            return tuple(int(x) for x in val[:3])
+    if isinstance(val, string_types):
+        s = val.strip().lstrip("#")
+        if len(s) == 6:
+            return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+        if len(s) == 3:
+            return (int(s[0] * 2, 16), int(s[1] * 2, 16), int(s[2] * 2, 16))
+    return None
+
+
+def _is_image(obj):
+    if obj is None:
+        return False
+    try:
+        if isinstance(obj, gimp.Image):
+            return True
+    except Exception:
+        pass
+    return hasattr(obj, "active_drawable") or hasattr(obj, "layers") or hasattr(obj, "base_type") or hasattr(obj, "filename")
+
+
+def _is_drawable(obj):
+    if obj is None:
+        return False
+    try:
+        if isinstance(obj, gimp.Item):
+            return True
+    except Exception:
+        pass
+    return hasattr(obj, "drawable_id") or hasattr(obj, "is_layer") or hasattr(obj, "is_channel")
+
+
+def _helper_add_rectangle(*args, **kwargs):
+    image = kwargs.get("image")
+    drawable = kwargs.get("drawable")
+    op = kwargs.get("op", kwargs.get("operation", CHANNEL_OP_REPLACE))
+    color = _parse_color(kwargs.get("color"))
+
+    pos_args = list(args)
+    if pos_args and _is_image(pos_args[0]):
+        image = pos_args.pop(0)
+    if pos_args and _is_drawable(pos_args[0]):
+        drawable = pos_args.pop(0)
+
+    if len(pos_args) == 5:
+        c = _parse_color(pos_args[4])
+        if c is not None:
+            color = c
+            pos_args.pop(4)
+
+    if len(pos_args) >= 4:
+        x, y, w, h = [int(v) for v in pos_args[:4]]
+    else:
+        x = int(kwargs.get("x", 0))
+        y = int(kwargs.get("y", 0))
+        w = int(kwargs.get("width", kwargs.get("w", 0)))
+        h = int(kwargs.get("height", kwargs.get("h", 0)))
+
+    if image is None:
+        image = _ensure_image()
+    if drawable is None:
+        drawable = image.active_drawable if getattr(image, "active_drawable", None) else (image.layers[0] if getattr(image, "layers", None) else None)
+
+    if color is not None:
+        pdb.gimp_context_set_foreground(color)
+
+    pdb.gimp_image_select_rectangle(image, op, x, y, w, h)
+    if drawable is not None:
+        pdb.gimp_edit_fill(drawable, FOREGROUND_FILL)
+    pdb.gimp_selection_none(image)
+
+
+def _helper_add_ellipse(*args, **kwargs):
+    image = kwargs.get("image")
+    drawable = kwargs.get("drawable")
+    op = kwargs.get("op", kwargs.get("operation", CHANNEL_OP_REPLACE))
+    color = _parse_color(kwargs.get("color"))
+
+    pos_args = list(args)
+    if pos_args and _is_image(pos_args[0]):
+        image = pos_args.pop(0)
+    if pos_args and _is_drawable(pos_args[0]):
+        drawable = pos_args.pop(0)
+
+    if len(pos_args) == 5:
+        c = _parse_color(pos_args[4])
+        if c is not None:
+            color = c
+            pos_args.pop(4)
+
+    if len(pos_args) >= 4:
+        x, y, w, h = [int(v) for v in pos_args[:4]]
+    else:
+        x = int(kwargs.get("x", 0))
+        y = int(kwargs.get("y", 0))
+        w = int(kwargs.get("width", kwargs.get("w", 0)))
+        h = int(kwargs.get("height", kwargs.get("h", 0)))
+
+    if image is None:
+        image = _ensure_image()
+    if drawable is None:
+        drawable = image.active_drawable if getattr(image, "active_drawable", None) else (image.layers[0] if getattr(image, "layers", None) else None)
+
+    if color is not None:
+        pdb.gimp_context_set_foreground(color)
+
+    pdb.gimp_image_select_ellipse(image, op, x, y, w, h)
+    if drawable is not None:
+        pdb.gimp_edit_fill(drawable, FOREGROUND_FILL)
+    pdb.gimp_selection_none(image)
+
+
+def _helper_add_circle(*args, **kwargs):
+    image = kwargs.get("image")
+    drawable = kwargs.get("drawable")
+    op = kwargs.get("op", kwargs.get("operation", CHANNEL_OP_REPLACE))
+    color = _parse_color(kwargs.get("color"))
+
+    pos_args = list(args)
+    if pos_args and _is_image(pos_args[0]):
+        image = pos_args.pop(0)
+    if pos_args and _is_drawable(pos_args[0]):
+        drawable = pos_args.pop(0)
+
+    if len(pos_args) == 4:
+        c = _parse_color(pos_args[3])
+        if c is not None:
+            color = c
+            pos_args.pop(3)
+
+    if len(pos_args) >= 3:
+        cx, cy, r = [int(v) for v in pos_args[:3]]
+    else:
+        cx = int(kwargs.get("cx", kwargs.get("x", 0)))
+        cy = int(kwargs.get("cy", kwargs.get("y", 0)))
+        r = int(kwargs.get("r", kwargs.get("radius", 0)))
+
+    x = cx - r
+    y = cy - r
+    w = 2 * r
+    h = 2 * r
+
+    if image is None:
+        image = _ensure_image()
+    if drawable is None:
+        drawable = image.active_drawable if getattr(image, "active_drawable", None) else (image.layers[0] if getattr(image, "layers", None) else None)
+
+    if color is not None:
+        pdb.gimp_context_set_foreground(color)
+
+    pdb.gimp_image_select_ellipse(image, op, x, y, w, h)
+    if drawable is not None:
+        pdb.gimp_edit_fill(drawable, FOREGROUND_FILL)
+    pdb.gimp_selection_none(image)
+
+
+def _helper_draw_line(*args, **kwargs):
+    drawable = kwargs.get("drawable")
+    pos = list(args)
+    if pos and _is_drawable(pos[0]):
+        drawable = pos.pop(0)
+    elif pos and _is_image(pos[0]):
+        img = pos.pop(0)
+        if pos and _is_drawable(pos[0]):
+            drawable = pos.pop(0)
+        else:
+            drawable = getattr(img, "active_drawable", None)
+
+    if drawable is None:
+        img = _ensure_image()
+        drawable = img.active_drawable
+
+    color = _parse_color(kwargs.get("color"))
+    if color is not None:
+        pdb.gimp_context_set_foreground(color)
+
+    if len(pos) == 1 and isinstance(pos[0], (list, tuple)):
+        raw = pos[0]
+    elif len(pos) >= 4:
+        raw = pos[:4]
+    else:
+        raw = kwargs.get("points", [])
+
+    flat = []
+    for p in raw:
+        if isinstance(p, (list, tuple)):
+            flat.extend(int(v) for v in p)
+        else:
+            flat.append(int(p))
+
+    if len(flat) >= 4 and drawable is not None:
+        try:
+            pdb.gimp_pencil(drawable, flat)
+        except Exception:
+            pdb.gimp_pencil(drawable, len(flat) // 2, flat)
+
+
+def _helper_add_polygon(*args, **kwargs):
+    image = kwargs.get("image")
+    drawable = kwargs.get("drawable")
+    op = kwargs.get("op", kwargs.get("operation", CHANNEL_OP_REPLACE))
+    color = _parse_color(kwargs.get("color"))
+
+    pos = list(args)
+    if pos and _is_image(pos[0]):
+        image = pos.pop(0)
+    if pos and _is_drawable(pos[0]):
+        drawable = pos.pop(0)
+
+    if pos and len(pos) >= 1 and (
+        pos[0] in (0, 1, 2, 3)
+        or (isinstance(pos[0], string_types) and pos[0] in (
+            "CHANNEL_OP_REPLACE", "CHANNEL_OP_ADD", "CHANNEL_OP_SUBTRACT", "CHANNEL_OP_INTERSECT",
+            "REPLACE", "ADD", "SUBTRACT", "INTERSECT"
+        ))
+    ):
+        op = _parse_op(pos.pop(0))
+
+    if len(pos) == 2 and isinstance(pos[0], (int, float)) and isinstance(pos[1], (list, tuple)):
+        raw_points = pos[1]
+    elif len(pos) == 1 and isinstance(pos[0], (list, tuple)):
+        raw_points = pos[0]
+    elif len(pos) >= 2 and all(isinstance(v, (int, float)) for v in pos):
+        raw_points = pos
+    else:
+        raw_points = kwargs.get("points", kwargs.get("segs", []))
+
+    flat = []
+    for p in raw_points:
+        if isinstance(p, (list, tuple)):
+            flat.extend(float(v) for v in p)
+        else:
+            flat.append(float(p))
+
+    if image is None:
+        image = _ensure_image()
+    if drawable is None:
+        drawable = getattr(image, "active_drawable", None) or (image.layers[0] if getattr(image, "layers", None) else None)
+
+    if color is not None:
+        pdb.gimp_context_set_foreground(color)
+
+    op_code = _parse_op(op)
+    try:
+        pdb.gimp_image_select_polygon(image, op_code, flat)
+    except Exception:
+        pdb.gimp_image_select_polygon(image, op_code, len(flat), flat)
+    if drawable is not None:
+        pdb.gimp_edit_fill(drawable, FOREGROUND_FILL)
+    pdb.gimp_selection_none(image)
+
+
+HELPERS = {
+    "add_rectangle": _helper_add_rectangle,
+    "draw_rectangle": _helper_add_rectangle,
+    "fill_rectangle": _helper_add_rectangle,
+    "add_ellipse": _helper_add_ellipse,
+    "draw_ellipse": _helper_add_ellipse,
+    "fill_ellipse": _helper_add_ellipse,
+    "add_circle": _helper_add_circle,
+    "draw_circle": _helper_add_circle,
+    "fill_circle": _helper_add_circle,
+    "draw_line": _helper_draw_line,
+    "add_line": _helper_draw_line,
+    "add_polygon": _helper_add_polygon,
+    "draw_polygon": _helper_add_polygon,
+    "fill_polygon": _helper_add_polygon,
+}
+
+
+def _parse_op(op):
+    if op is None:
+        return 2  # CHANNEL_OP_REPLACE
+    if isinstance(op, int):
+        return op
+    if isinstance(op, string_types):
+        op_map = {
+            "CHANNEL_OP_ADD": 0, "ADD": 0, "SELECTION_ADD": 0,
+            "CHANNEL_OP_SUBTRACT": 1, "SUBTRACT": 1, "SELECTION_SUBTRACT": 1,
+            "CHANNEL_OP_REPLACE": 2, "REPLACE": 2, "SELECTION_REPLACE": 2,
+            "CHANNEL_OP_INTERSECT": 3, "INTERSECT": 3, "SELECTION_INTERSECT": 3,
+        }
+        if op in op_map:
+            return op_map[op]
+        try:
+            return int(op)
+        except ValueError:
+            return 2
+    return 2
+
+
 class _PdbAlias(object):
     """Proxy around the GIMP ``pdb`` that maps commonly-hallucinated PDB names
-    to the real GIMP 2.10 procedures, so generated scripts still run."""
+    to the real GIMP 2.10 procedures, and adapts forgiving argument lists,
+    so generated scripts still run."""
 
     def __init__(self, real_pdb):
         self._pdb = real_pdb
 
     def __getattr__(self, name):
+        if name in HELPERS:
+            return HELPERS[name]
         if name == "gimp_image_get_width":
             return self._pdb.gimp_image_width
         if name == "gimp_image_get_height":
             return self._pdb.gimp_image_height
-        if name == "gimp_selection_ellipse":
-            return self._selection_ellipse
-        if name == "gimp_selection_rectangle":
+        if name in (
+            "gimp_selection_rectangle", "gimp_rectangle_select", "gimp_image_select_rectangle",
+            "gimp_rect_select", "rect_select", "select_rectangle"
+        ):
             return self._selection_rectangle
-        if name == "gimp_ellipse_select":
-            return self._ellipse_select
-        if name == "gimp_rectangle_select":
-            return self._rectangle_select
-        if name == "gimp_layer_set_offset":
+        if name in (
+            "gimp_selection_ellipse", "gimp_ellipse_select", "gimp_image_select_ellipse",
+            "select_ellipse", "ellipse_select"
+        ):
+            return self._selection_ellipse
+        if name in ("gimp_image_select_polygon", "gimp_polygon_select", "gimp_selection_polygon", "select_polygon"):
+            return self._polygon_select
+        if name in ("gimp_layer_new", "gimp_layer_new_with_mode"):
+            return self._flex_layer_new
+        if name in ("gimp_image_insert_layer", "gimp_image_add_layer"):
+            return self._flex_insert_layer
+        if name in ("gimp_context_set_foreground", "gimp_context_set_fg_color"):
+            return self._flex_set_foreground
+        if name in ("gimp_context_set_background", "gimp_context_set_bg_color"):
+            return self._flex_set_background
+        if name == "gimp_selection_none":
+            return self._flex_selection_none
+        if name == "gimp_selection_all":
+            return self._flex_selection_all
+        if name == "gimp_selection_invert":
+            return self._flex_selection_invert
+        if name == "gimp_displays_flush":
+            return self._flex_displays_flush
+        if name == "gimp_image_undo_group_start":
+            return self._flex_undo_group_start
+        if name == "gimp_image_undo_group_end":
+            return self._flex_undo_group_end
+        if name == "gimp_file_save":
+            return self._flex_file_save
+        if name == "gimp_image_resize":
+            return self._flex_image_resize
+        if name in ("gimp_layer_set_offset", "gimp_layer_set_offsets"):
             return self._pdb.gimp_layer_set_offsets
         if name == "gimp_edit_blend":
             return self._edit_blend
@@ -109,55 +441,239 @@ class _PdbAlias(object):
 
     def _find_image(self, args):
         for a in args:
-            if isinstance(a, gimp.Image):
+            if _is_image(a):
                 return a
-        return gimp.image_list()[0]
-
-    def _selection_ellipse(self, *args, **kwargs):
-        return self._image_select("gimp_image_select_ellipse", *args, **kwargs)
+        images = gimp.image_list()
+        if images:
+            return images[0]
+        return _ensure_image()
 
     def _selection_rectangle(self, *args, **kwargs):
-        return self._image_select("gimp_image_select_rectangle", *args, **kwargs)
+        return self._flex_select_shape("gimp_image_select_rectangle", *args, **kwargs)
 
-    def _ellipse_select(self, *args, **kwargs):
-        return self._flex_select("gimp_image_select_ellipse", *args, **kwargs)
+    def _selection_ellipse(self, *args, **kwargs):
+        return self._flex_select_shape("gimp_image_select_ellipse", *args, **kwargs)
 
-    def _rectangle_select(self, *args, **kwargs):
-        return self._flex_select("gimp_image_select_rectangle", *args, **kwargs)
+    def _flex_select_shape(self, proc, *args, **kwargs):
+        kwargs.pop("run_mode", None)
+        image = kwargs.pop("image", None)
+        op = kwargs.pop("op", kwargs.pop("operation", None))
 
-    def _flex_select(self, proc, *args, **kwargs):
-        """Accept the real PDB call shape or the model's common wrong shapes.
+        pos_args = list(args)
+        if pos_args and _is_image(pos_args[0]):
+            image = pos_args.pop(0)
+        elif pos_args and _is_drawable(pos_args[0]):
+            pos_args.pop(0)
 
-        The model often emits ``gimp_ellipse_select(canvas_w, canvas_h, w, h,
-        cx, cy, antialias, from_center)`` (GIMP-3 style). Rebuild a correct
-        2.10 call, defaulting to replace-mode and handling from-center.
-        """
-        if args and isinstance(args[0], gimp.Image):
-            return getattr(self._pdb, proc)(*args)
+        if len(pos_args) == 6 and not _is_image(pos_args[0]) and not _is_drawable(pos_args[0]):
+            if pos_args[0] in (0, 1, 2, 3, CHANNEL_OP_REPLACE, CHANNEL_OP_ADD):
+                op = _parse_op(pos_args.pop(0))
+                x, y, w, h = [int(v) for v in pos_args[:4]]
+            else:
+                w, h = int(pos_args[0]), int(pos_args[1])
+                x, y = int(pos_args[2]), int(pos_args[3])
+                if pos_args[5]:
+                    x -= w // 2
+                    y -= h // 2
+        elif len(pos_args) == 8 and not isinstance(pos_args[7], float):
+            w, h = int(pos_args[2]), int(pos_args[3])
+            x, y = int(pos_args[4]), int(pos_args[5])
+            if pos_args[7]:
+                x -= w // 2
+                y -= h // 2
+        elif len(pos_args) == 5:
+            # Check if first arg is image-like or non-numeric
+            if not isinstance(pos_args[0], (int, float)) and _is_image(pos_args[0]):
+                image = pos_args.pop(0)
+                x, y, w, h = [int(v) for v in pos_args[:4]]
+            elif op is None and pos_args[0] in (0, 1, 2, 3, CHANNEL_OP_REPLACE, CHANNEL_OP_ADD):
+                op = _parse_op(pos_args.pop(0))
+                x, y, w, h = [int(v) for v in pos_args[:4]]
+            else:
+                # If first arg is not op or image, could be (image, x, y, w, h)
+                if not isinstance(pos_args[0], (int, float)):
+                    image = pos_args.pop(0)
+                    x, y, w, h = [int(v) for v in pos_args[:4]]
+                else:
+                    x, y, w, h = [int(v) for v in pos_args[:4]]
+        elif len(pos_args) == 4:
+            x, y, w, h = [int(v) for v in pos_args]
+        elif kwargs:
+            x = int(kwargs.get("x", 0))
+            y = int(kwargs.get("y", 0))
+            w = int(kwargs.get("width", kwargs.get("w", 0)))
+            h = int(kwargs.get("height", kwargs.get("h", 0)))
+        else:
+            nums = [a for a in pos_args if not _is_image(a) and not _is_drawable(a)]
+            if len(nums) >= 4:
+                x, y, w, h = [int(n) for n in nums[-4:]]
+            else:
+                raise TypeError("could not interpret arguments for %s" % proc)
+
+        if image is None:
+            image = self._find_image(args)
+        op_code = _parse_op(op)
+        return getattr(self._pdb, proc)(image, op_code, int(x), int(y), int(w), int(h))
+
+    def _polygon_select(self, *args, **kwargs):
+        kwargs.pop("run_mode", None)
+        image = kwargs.pop("image", None)
+        op = kwargs.pop("operation", kwargs.pop("op", None))
+        pos = list(args)
+        if pos and _is_image(pos[0]):
+            image = pos.pop(0)
+
+        if len(pos) >= 1 and (
+            pos[0] in (0, 1, 2, 3, CHANNEL_OP_REPLACE, CHANNEL_OP_ADD)
+            or (isinstance(pos[0], string_types) and pos[0] in (
+                "CHANNEL_OP_REPLACE", "CHANNEL_OP_ADD", "CHANNEL_OP_SUBTRACT", "CHANNEL_OP_INTERSECT",
+                "REPLACE", "ADD", "SUBTRACT", "INTERSECT"
+            ))
+        ):
+            op = _parse_op(pos.pop(0))
+
+        if len(pos) == 2 and isinstance(pos[0], (int, float)) and isinstance(pos[1], (list, tuple)):
+            raw_points = pos[1]
+        elif len(pos) == 1 and isinstance(pos[0], (list, tuple)):
+            raw_points = pos[0]
+        elif len(pos) >= 2 and all(isinstance(v, (int, float)) for v in pos):
+            raw_points = pos
+        elif len(pos) >= 1 and isinstance(pos[-1], (list, tuple)):
+            raw_points = pos[-1]
+        else:
+            raw_points = kwargs.get("points", kwargs.get("segs", []))
+
+        flat = []
+        for p in raw_points:
+            if isinstance(p, (list, tuple)):
+                flat.extend(float(v) for v in p)
+            else:
+                flat.append(float(p))
+
+        if image is None:
+            image = self._find_image(args)
+        op_code = _parse_op(op)
+
+        # In GIMP Python-Fu (gimpfu / pygimp), pdb.gimp_image_select_polygon takes 3 arguments:
+        # (image, operation, segs) where segs is a list/tuple of float coords.
+        # Passing count as a 4th argument raises TypeError: wrong number of parameters.
+        try:
+            return self._pdb.gimp_image_select_polygon(image, op_code, flat)
+        except TypeError as exc:
+            if "wrong number of parameters" in str(exc) or "arguments" in str(exc):
+                return self._pdb.gimp_image_select_polygon(image, op_code, len(flat), flat)
+            raise
+
+    def _flex_layer_new(self, *args, **kwargs):
+        image = kwargs.get("image")
+        pos = list(args)
+        if pos and _is_image(pos[0]):
+            image = pos.pop(0)
+        if image is None:
+            image = self._find_image(args)
+
+        if pos and isinstance(pos[0], string_types) and len(pos) >= 3 and isinstance(pos[1], (int, float)):
+            name = str(pos.pop(0))
+            w = int(pos.pop(0))
+            h = int(pos.pop(0))
+            ltype = int(pos.pop(0)) if pos else RGB_IMAGE
+            opacity = float(pos.pop(0)) if pos else 100.0
+            mode = int(pos.pop(0)) if pos else NORMAL_MODE
+        elif len(pos) >= 3:
+            w = int(pos[0])
+            h = int(pos[1])
+            ltype = int(pos[2])
+            name = str(pos[3]) if len(pos) > 3 else "Layer"
+            opacity = float(pos[4]) if len(pos) > 4 else 100.0
+            mode = int(pos[5]) if len(pos) > 5 else NORMAL_MODE
+        else:
+            w = int(kwargs.get("width", getattr(image, "width", 800)))
+            h = int(kwargs.get("height", getattr(image, "height", 600)))
+            ltype = int(kwargs.get("type", kwargs.get("layer_type", RGB_IMAGE)))
+            name = str(kwargs.get("name", "Layer"))
+            opacity = float(kwargs.get("opacity", 100.0))
+            mode = int(kwargs.get("mode", NORMAL_MODE))
+
+        return self._pdb.gimp_layer_new(image, w, h, ltype, name, opacity, mode)
+
+    def _flex_insert_layer(self, *args, **kwargs):
+        image = kwargs.get("image")
+        layer = kwargs.get("layer")
+        parent = kwargs.get("parent", None)
+        position = kwargs.get("position", 0)
+
+        pos = list(args)
+        if pos and _is_image(pos[0]):
+            image = pos.pop(0)
+        if pos and _is_drawable(pos[0]):
+            layer = pos.pop(0)
+        if len(pos) == 1:
+            if isinstance(pos[0], int):
+                position = pos[0]
+            else:
+                parent = pos[0]
+        elif len(pos) >= 2:
+            parent = pos[0]
+            position = int(pos[1])
+
+        if image is None:
+            image = self._find_image(args)
+        return self._pdb.gimp_image_insert_layer(image, layer, parent, int(position))
+
+    def _flex_set_foreground(self, *args, **kwargs):
+        color = self._extract_color(args, kwargs)
+        return self._pdb.gimp_context_set_foreground(color)
+
+    def _flex_set_background(self, *args, **kwargs):
+        color = self._extract_color(args, kwargs)
+        return self._pdb.gimp_context_set_background(color)
+
+    def _extract_color(self, args, kwargs):
+        if "color" in kwargs:
+            c = _parse_color(kwargs["color"])
+            if c:
+                return c
+        if len(args) == 1:
+            c = _parse_color(args[0])
+            if c:
+                return c
+            return args[0]
+        if len(args) >= 3:
+            return (int(args[0]), int(args[1]), int(args[2]))
+        return (0, 0, 0)
+
+    def _flex_selection_none(self, *args, **kwargs):
         image = self._find_image(args)
-        nums = [a for a in args
-                if not isinstance(a, gimp.Image) and not isinstance(a, gimp.Item)]
-        if len(nums) == 4:
-            return self._image_select(proc, *args, **kwargs)
-        if len(nums) == 8 and not isinstance(nums[7], float):
-            w, h = int(nums[2]), int(nums[3])
-            x, y = int(nums[4]), int(nums[5])
-            if nums[7]:
-                x -= w // 2
-                y -= h // 2
-            return getattr(self._pdb, proc)(
-                image, CHANNEL_OP_REPLACE, x, y, w, h
-            )
-        if len(nums) == 6:
-            w, h = int(nums[0]), int(nums[1])
-            x, y = int(nums[2]), int(nums[3])
-            if nums[5]:
-                x -= w // 2
-                y -= h // 2
-            return getattr(self._pdb, proc)(
-                image, CHANNEL_OP_REPLACE, x, y, w, h
-            )
-        raise TypeError("could not interpret arguments for %s" % proc)
+        return self._pdb.gimp_selection_none(image)
+
+    def _flex_selection_all(self, *args, **kwargs):
+        image = self._find_image(args)
+        return self._pdb.gimp_selection_all(image)
+
+    def _flex_selection_invert(self, *args, **kwargs):
+        image = self._find_image(args)
+        return self._pdb.gimp_selection_invert(image)
+
+    def _flex_undo_group_start(self, *args, **kwargs):
+        image = self._find_image(args)
+        return self._pdb.gimp_image_undo_group_start(image)
+
+    def _flex_undo_group_end(self, *args, **kwargs):
+        image = self._find_image(args)
+        return self._pdb.gimp_image_undo_group_end(image)
+
+    def _flex_displays_flush(self, *args, **kwargs):
+        return self._pdb.gimp_displays_flush()
+
+    def _flex_file_save(self, *args, **kwargs):
+        if len(args) == 3:
+            return self._pdb.gimp_file_save(args[0], args[1], args[2], args[2])
+        return self._pdb.gimp_file_save(*args, **kwargs)
+
+    def _flex_image_resize(self, *args, **kwargs):
+        if len(args) == 3:
+            return self._pdb.gimp_image_resize(args[0], args[1], args[2], 0, 0)
+        return self._pdb.gimp_image_resize(*args, **kwargs)
 
     def _edit_blend(self, *args, **kwargs):
         """Accept the real 16-arg gimp_edit_blend call or the model's shorter
@@ -237,37 +753,46 @@ class _PdbAlias(object):
         )
 
     def _pencil(self, *args, **kwargs):
-        """gimp_pencil(drawable, num_points, points) where points may be a flat
-        list or a list of (x, y) tuples - flatten tuples to the flat form."""
-        if len(args) == 3:
-            drawable, num, points = args
-            flat = []
-            for p in points:
-                if isinstance(p, (list, tuple)):
-                    flat.extend(int(v) for v in p)
-                else:
-                    flat.append(int(p))
-            return self._pdb.gimp_pencil(drawable, len(flat) // 2, flat)
-        return self._pdb.gimp_pencil(*args)
-
-    def _image_select(self, proc, *args, **kwargs):
+        """gimp_pencil(drawable, num_points, points) or gimp_pencil(drawable, points)
+        where points may be a flat list or a list of (x, y) tuples."""
         kwargs.pop("run_mode", None)
-        if kwargs:
-            x = int(kwargs.pop("x", 0))
-            y = int(kwargs.pop("y", 0))
-            width = int(kwargs.pop("width", 0))
-            height = int(kwargs.pop("height", 0))
-            image = kwargs.pop("image", None)
+        drawable = kwargs.pop("drawable", None)
+        pos = list(args)
+        if pos and _is_drawable(pos[0]):
+            drawable = pos.pop(0)
+        elif pos and _is_image(pos[0]):
+            img = pos.pop(0)
+            if pos and _is_drawable(pos[0]):
+                drawable = pos.pop(0)
+            else:
+                drawable = getattr(img, "active_drawable", None)
+
+        if drawable is None:
+            img = _ensure_image()
+            drawable = getattr(img, "active_drawable", None)
+
+        if len(pos) == 2 and isinstance(pos[0], (int, float)) and isinstance(pos[1], (list, tuple)):
+            raw_points = pos[1]
+        elif len(pos) == 1 and isinstance(pos[0], (list, tuple)):
+            raw_points = pos[0]
+        elif len(pos) >= 2 and all(isinstance(v, (int, float)) for v in pos):
+            raw_points = pos
         else:
-            nums = [a for a in args
-                    if not isinstance(a, gimp.Image) and not isinstance(a, gimp.Item)]
-            if len(nums) < 4:
-                raise TypeError("expected x, y, width, height")
-            x, y, width, height = [int(n) for n in nums[-4:]]
-            image = None
-        if image is None:
-            image = self._find_image(args)
-        return getattr(self._pdb, proc)(image, CHANNEL_OP_REPLACE, x, y, width, height)
+            raw_points = kwargs.get("points", kwargs.get("strokes", []))
+
+        flat = []
+        for p in raw_points:
+            if isinstance(p, (list, tuple)):
+                flat.extend(float(v) for v in p)
+            else:
+                flat.append(float(p))
+
+        try:
+            return self._pdb.gimp_pencil(drawable, flat)
+        except TypeError as exc:
+            if "wrong number of parameters" in str(exc) or "arguments" in str(exc):
+                return self._pdb.gimp_pencil(drawable, len(flat) // 2, flat)
+            raise
 
 
 # ------------------------------------------------------------ typo correction
@@ -507,11 +1032,15 @@ def _handle(cmd):
             ns = dict(globals())
             for _name, _value in ALIAS_CONSTANTS.items():
                 ns.setdefault(_name, _value)
+            for _name, _func in HELPERS.items():
+                ns.setdefault(_name, _func)
             exec(compiled, ns)
             result = sys.stdout.getvalue()
             return {"status": "ok", "result": result}
         except Exception as exc:  # noqa: BLE001 - must report script failures
-            return {"status": "error", "error": "%s: %s" % (type(exc).__name__, exc)}
+            import traceback
+            tb = traceback.format_exc()
+            return {"status": "error", "error": "%s: %s\n%s" % (type(exc).__name__, exc, tb)}
         finally:
             sys.stdout = old_stdout
     if name == "canvas_state":

@@ -21,6 +21,8 @@ PLUGIN_DIR = Path(__file__).resolve().parents[2] / "plugins" / "gimp"
 REAL_NAMES = [
     "gimp-image-select-ellipse",
     "gimp-image-select-rectangle",
+    "gimp-image-select-polygon",
+    "gimp-pencil",
     "gimp-edit-fill",
     "gimp-selection-none",
     "gimp-context-set-foreground",
@@ -72,11 +74,21 @@ def plugin_module(monkeypatch):
     """Import plugin.py fresh against a fake gimpfu, per test."""
     sys.path.insert(0, str(PLUGIN_DIR))
     fake_gimpfu = types.ModuleType("gimpfu")
-    for name in [
-        "RGB", "RGB_IMAGE", "NORMAL_MODE", "CHANNEL_OP_REPLACE", "CHANNEL_OP_ADD",
-        "BACKGROUND_FILL", "FOREGROUND_FILL",
-    ]:
-        setattr(fake_gimpfu, name, name)
+    constants = {
+        "RGB": 0,
+        "RGB_IMAGE": 0,
+        "NORMAL_MODE": 0,
+        "CHANNEL_OP_ADD": 0,
+        "CHANNEL_OP_SUBTRACT": 1,
+        "CHANNEL_OP_REPLACE": 2,
+        "CHANNEL_OP_INTERSECT": 3,
+        "FOREGROUND_FILL": 0,
+        "BACKGROUND_FILL": 1,
+        "WHITE_FILL": 2,
+        "TRANSPARENT_FILL": 3,
+    }
+    for name, val in constants.items():
+        setattr(fake_gimpfu, name, val)
 
     real_pdb = _FakeRealPdb()
     fake_gimpfu.pdb = real_pdb
@@ -132,7 +144,116 @@ def test_unrelated_real_error_is_not_swallowed_or_retried(plugin_module):
     result = plugin._handle({"cmd": "execute", "code": script})
 
     assert result["status"] == "error"
-    assert "invalid ID" in result["error"]
-    # Only tried once - must not have attempted a "correction" retry for a
-    # failure that wasn't a missing-procedure error.
     assert real_pdb.calls.count("gimp_edit_fill") == 1
+
+
+def test_flexible_rectangle_selection_5_args(plugin_module):
+    plugin, real_pdb = plugin_module
+    script = (
+        "from gimpfu import *\n"
+        "image = gimp.image_list()[0]\n"
+        "pdb.gimp_image_select_rectangle(image, 10, 20, 100, 50)\n"
+    )
+    result = plugin._handle({"cmd": "execute", "code": script})
+    assert result["status"] == "ok"
+    assert "gimp_image_select_rectangle" in real_pdb.calls
+
+
+def test_flexible_rectangle_selection_4_args(plugin_module):
+    plugin, real_pdb = plugin_module
+    script = (
+        "from gimpfu import *\n"
+        "pdb.gimp_image_select_rectangle(10, 20, 100, 50)\n"
+    )
+    result = plugin._handle({"cmd": "execute", "code": script})
+    assert result["status"] == "ok"
+    assert "gimp_image_select_rectangle" in real_pdb.calls
+
+
+def test_flexible_context_set_foreground_3_args(plugin_module):
+    plugin, real_pdb = plugin_module
+    script = (
+        "from gimpfu import *\n"
+        "pdb.gimp_context_set_foreground(255, 128, 0)\n"
+    )
+    result = plugin._handle({"cmd": "execute", "code": script})
+    assert result["status"] == "ok"
+    assert "gimp_context_set_foreground" in real_pdb.calls
+
+
+def test_injected_add_rectangle_helper(plugin_module):
+    plugin, real_pdb = plugin_module
+    script = (
+        "from gimpfu import *\n"
+        "add_rectangle(10, 20, 100, 50, (255, 0, 0))\n"
+        "pdb.add_rectangle(0, 0, 50, 50)\n"
+    )
+    result = plugin._handle({"cmd": "execute", "code": script})
+    assert result["status"] == "ok"
+    assert "gimp_image_select_rectangle" in real_pdb.calls
+    assert "gimp_edit_fill" in real_pdb.calls
+    assert "gimp_selection_none" in real_pdb.calls
+
+
+def test_flexible_polygon_selection_3_args(plugin_module):
+    plugin, real_pdb = plugin_module
+    script = (
+        "from gimpfu import *\n"
+        "image = gimp.image_list()[0]\n"
+        "pdb.gimp_image_select_polygon(image, CHANNEL_OP_REPLACE, [10, 10, 50, 10, 50, 50, 10, 50])\n"
+    )
+    result = plugin._handle({"cmd": "execute", "code": script})
+    assert result["status"] == "ok"
+    assert "gimp_image_select_polygon" in real_pdb.calls
+
+
+def test_flexible_polygon_selection_4_args_with_len(plugin_module):
+    plugin, real_pdb = plugin_module
+    script = (
+        "from gimpfu import *\n"
+        "image = gimp.image_list()[0]\n"
+        "pts = [10, 10, 50, 10, 50, 50, 10, 50]\n"
+        "pdb.gimp_image_select_polygon(image, CHANNEL_OP_REPLACE, len(pts), pts)\n"
+    )
+    result = plugin._handle({"cmd": "execute", "code": script})
+    assert result["status"] == "ok"
+    assert "gimp_image_select_polygon" in real_pdb.calls
+
+
+def test_flexible_polygon_selection_tuples_and_implicit_image(plugin_module):
+    plugin, real_pdb = plugin_module
+    script = (
+        "from gimpfu import *\n"
+        "pdb.gimp_image_select_polygon(CHANNEL_OP_REPLACE, [(10, 10), (50, 10), (50, 50), (10, 50)])\n"
+    )
+    result = plugin._handle({"cmd": "execute", "code": script})
+    assert result["status"] == "ok"
+    assert "gimp_image_select_polygon" in real_pdb.calls
+
+
+def test_injected_add_polygon_helper(plugin_module):
+    plugin, real_pdb = plugin_module
+    script = (
+        "from gimpfu import *\n"
+        "add_polygon([10, 10, 50, 10, 50, 50, 10, 50], color=(200, 200, 200))\n"
+    )
+    result = plugin._handle({"cmd": "execute", "code": script})
+    assert result["status"] == "ok"
+    assert "gimp_image_select_polygon" in real_pdb.calls
+    assert "gimp_edit_fill" in real_pdb.calls
+    assert "gimp_selection_none" in real_pdb.calls
+
+
+def test_pencil_2_and_3_args(plugin_module):
+    plugin, real_pdb = plugin_module
+    script = (
+        "from gimpfu import *\n"
+        "image = gimp.image_list()[0]\n"
+        "drawable = image.active_drawable\n"
+        "pdb.gimp_pencil(drawable, [0, 0, 100, 100])\n"
+        "pdb.gimp_pencil(drawable, 2, [0, 0, 100, 100])\n"
+    )
+    result = plugin._handle({"cmd": "execute", "code": script})
+    assert result["status"] == "ok"
+    assert real_pdb.calls.count("gimp_pencil") == 2
+

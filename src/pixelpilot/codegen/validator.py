@@ -260,14 +260,31 @@ class SafetyValidator:
                 calls.append(".".join(reversed(parts)))
         return calls
 
+    def _collect_local_definitions(self, tree: ast.AST) -> set[str]:
+        local_defs: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                local_defs.add(node.name)
+            elif isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        local_defs.add(target.id)
+            elif isinstance(node, ast.NamedExpr) and isinstance(node.target, ast.Name):
+                local_defs.add(node.target.id)
+        return local_defs
+
     def _check_api_calls(self, tree: ast.AST, report: SafetyReport) -> None:
         calls = self._collect_api_calls(tree)
         report.api_calls_checked = len(calls)
         known = self.api_catalog
+        local_defs = self._collect_local_definitions(tree)
         unknown: list[str] = []
         for call in calls:
             # Bare calls like `print`, `str`, `range` are Python builtins, not editor APIs.
             if self._is_plain_builtin(call):
+                continue
+            # Locally defined functions / classes / callable variables in the script
+            if call in local_defs:
                 continue
             # `math.cos`, `random.randint`, etc. are ordinary stdlib calls from an
             # explicitly allowed import, not GIMP/Krita API surface - nothing to

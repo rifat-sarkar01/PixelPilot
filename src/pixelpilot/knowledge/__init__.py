@@ -108,4 +108,22 @@ def known_api_names(editor: str = "gimp") -> set:
                 names.add(name.split(".")[-1])
         leaf = entry.get("name", "")
         names.add(leaf.split(".")[-1].replace("-", "_"))
+
+    # Common helpers and forgiving aliases injected into the execution namespace
+    if editor == "gimp":
+        helper_names = {
+            "add_rectangle", "draw_rectangle", "fill_rectangle",
+            "add_ellipse", "draw_ellipse", "fill_ellipse",
+            "add_circle", "draw_circle", "fill_circle",
+            "draw_line", "add_line",
+            "gimp_selection_rectangle", "gimp_selection_ellipse",
+            "gimp_rectangle_select", "gimp_ellipse_select",
+            "gimp_rect_select", "rect_select",
+            "select_rectangle", "select_ellipse",
+            "gimp_image_get_width", "gimp_image_get_height",
+        }
+        for h in helper_names:
+            names.add(h)
+            names.add(f"pdb.{h}")
+
     return names
