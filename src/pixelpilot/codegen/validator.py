@@ -31,6 +31,13 @@ ALLOWED_IMPORTS = {
     "struct",
 }
 
+# Calls rooted at these modules are ordinary, well-known standard-library calls
+# (explicitly permitted by ALLOWED_IMPORTS above) - the API-hallucination check
+# below only has a catalog of GIMP/Krita procedures, so it has no way to
+# recognize e.g. `math.cos` as legitimate and previously flagged every such
+# call as an "unknown API call", drowning real hallucinations in noise.
+SAFE_STDLIB_MODULES = ALLOWED_IMPORTS - {"gimp", "gimpfu", "krita", "Krita"}
+
 FORBIDDEN_IMPORTS = {
     "os",
     "sys",
@@ -261,6 +268,12 @@ class SafetyValidator:
         for call in calls:
             # Bare calls like `print`, `str`, `range` are Python builtins, not editor APIs.
             if self._is_plain_builtin(call):
+                continue
+            # `math.cos`, `random.randint`, etc. are ordinary stdlib calls from an
+            # explicitly allowed import, not GIMP/Krita API surface - nothing to
+            # look up in the editor procedure catalog.
+            root = call.split(".", 1)[0]
+            if root in SAFE_STDLIB_MODULES:
                 continue
             if not self._api_call_known(call, known):
                 unknown.append(call)

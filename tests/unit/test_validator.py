@@ -129,5 +129,29 @@ def test_confirmation_modes():
     assert should_ask_confirmation("strict", passed) is True
 
 
+def test_stdlib_calls_from_allowed_modules_are_not_flagged_as_hallucinations():
+    # math/random/colorsys/json/re/struct are explicitly permitted imports (see
+    # ALLOWED_IMPORTS) - the API-hallucination check only has a catalog of
+    # GIMP/Krita procedures, so it previously flagged every single call on
+    # these modules (math.cos, math.radians, ...) as "possible hallucination",
+    # burying real hallucinations in noise.
+    script = (
+        "import math\n"
+        "angle = math.radians(25)\n"
+        "x = math.cos(angle)\n"
+        "y = math.sin(angle)\n"
+    )
+    report = SafetyValidator(editor="gimp").validate(script)
+    assert report.warnings == []
+    assert report.unknown_api_calls == []
+
+
+def test_genuinely_unknown_pdb_call_is_still_flagged():
+    script = "pdb.gimp_totally_made_up_call(1, 2, 3)\n"
+    report = SafetyValidator(editor="gimp").validate(script)
+    assert any("gimp_totally_made_up_call" in w for w in report.warnings)
+    assert any("gimp_totally_made_up_call" in c for c in report.unknown_api_calls)
+
+
 class SafetyReportStub:
     passed = True

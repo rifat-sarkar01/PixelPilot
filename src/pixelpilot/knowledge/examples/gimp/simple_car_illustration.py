@@ -1,4 +1,4 @@
-"""Draw a simple cartoon car illustration with a body, two windows and two wheels."""
+"""Draw a simple cartoon car illustration with a body, roof, two windows and two wheels."""
 from gimpfu import *
 
 # 1. Work on the currently open image - PixelPilot guarantees one exists.
@@ -25,14 +25,38 @@ try:
     pdb.gimp_edit_fill(drawable, FOREGROUND_FILL)
     pdb.gimp_selection_none(image)   # clear before the next shape - see rule 14
 
-    # 3. Windows: two rectangles on top of the body, side by side (different x
-    #    offsets - one left-of-center, one right-of-center).
-    window_w = int(body_w * 0.22)
-    window_h = int(body_h * 0.5)
-    window_y = body_y - int(window_h * 0.6)   # sits astride the top edge of the body
+    # 3. Roof: a trapezoid sitting on top of the body, narrower at the top than
+    #    the body below it. This is a polygon selection (see rule 19) - NOT a
+    #    gradient/blend call, and no trigonometry is needed for a plain
+    #    symmetric trapezoid, just fractions of the body's own width/height.
+    roof_h = int(body_h * 0.9)
+    roof_top_w = int(body_w * 0.45)
+    roof_bottom_y = body_y
+    roof_top_y = body_y - roof_h
+    roof_bottom_left_x = body_x + int(body_w * 0.15)
+    roof_bottom_right_x = body_x + int(body_w * 0.75)
+    roof_top_left_x = body_x + (body_w - roof_top_w) // 2
+    roof_top_right_x = roof_top_left_x + roof_top_w
 
-    window_left_x = body_x + int(body_w * 0.12)
-    window_right_x = body_x + int(body_w * 0.62)
+    roof_points = [
+        roof_bottom_left_x, roof_bottom_y,
+        roof_top_left_x, roof_top_y,
+        roof_top_right_x, roof_top_y,
+        roof_bottom_right_x, roof_bottom_y,
+    ]
+    pdb.gimp_image_select_polygon(image, CHANNEL_OP_REPLACE, len(roof_points), roof_points)
+    pdb.gimp_context_set_foreground((150, 20, 20))     # slightly darker red than the body
+    pdb.gimp_edit_fill(drawable, FOREGROUND_FILL)
+    pdb.gimp_selection_none(image)
+
+    # 4. Windows: two rectangles on the roof trapezoid, side by side (different
+    #    x offsets - one left-of-center, one right-of-center).
+    window_w = int(body_w * 0.16)
+    window_h = int(roof_h * 0.55)
+    window_y = roof_top_y + int(roof_h * 0.25)
+
+    window_left_x = roof_top_left_x + int(roof_top_w * 0.08)
+    window_right_x = roof_top_right_x - int(roof_top_w * 0.08) - window_w
 
     pdb.gimp_image_select_rectangle(image, CHANNEL_OP_REPLACE, window_left_x, window_y, window_w, window_h)
     pdb.gimp_image_select_rectangle(image, CHANNEL_OP_ADD, window_right_x, window_y, window_w, window_h)
@@ -40,7 +64,7 @@ try:
     pdb.gimp_edit_fill(drawable, FOREGROUND_FILL)
     pdb.gimp_selection_none(image)
 
-    # 4. Wheels: two circles along the bottom edge of the body, at DIFFERENT x
+    # 5. Wheels: two circles along the bottom edge of the body, at DIFFERENT x
     #    offsets (left third and right third) so they sit side by side rather
     #    than stacked on top of each other at the same x.
     wheel_d = int(body_h * 0.9)

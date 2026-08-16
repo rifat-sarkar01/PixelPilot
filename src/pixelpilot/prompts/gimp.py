@@ -70,7 +70,45 @@ GOTCHAS = """GIMP scripting rules (Python-Fu):
         WRONG:  wheel1_x = body_x + (body_w - d) // 2
                 wheel2_x = body_x + (body_w - d) // 2      # identical -> same spot
         RIGHT:  wheel1_x = body_x + int(body_w * 0.15)     # left side
-                wheel2_x = body_x + int(body_w * 0.75)     # right side"""
+                wheel2_x = body_x + int(body_w * 0.75)     # right side
+18. AVOID gimp_edit_blend / gradient fills entirely unless the user explicitly asks for
+    a gradient - including for angled shapes like a car hood or roof. A trapezoid or
+    other angled shape is NOT a reason to reach for a gradient; it's a polygon selection
+    (see rule 19) filled the same flat way as everything else. gimp_edit_blend is a
+    legacy call with many easily-confused constants across GIMP versions (there is no
+    PAINT_MODE_FG_BG_LINEAR or FG_BG_gradient - real blend-mode constants look like
+    BLEND_FG_BG_RGB) and a long fixed positional argument list that is very easy to get
+    wrong. For solid-color shapes - which is nearly always what a from-scratch
+    illustration needs - just use the same flat-fill pattern as every rule and example
+    above:
+        pdb.gimp_context_set_foreground((r, g, b))
+        pdb.gimp_edit_fill(drawable, FOREGROUND_FILL)
+    A flat fill is correct far more often than a gradient is worth the risk.
+19. For a trapezoid, triangle, or any other angled/non-rectangular shape (e.g. a car
+    hood or roof), use gimp_image_select_polygon - do NOT reach for gimp_edit_blend for
+    this, and do NOT use trigonometry (math.cos/math.sin) unless the angle genuinely
+    isn't a plain fraction of width/height. Its signature is
+    `gimp_image_select_polygon(image, operation, num_values, points)` where `points` is
+    a FLAT list of x, y, x, y, ... (num_values is the total count of numbers in that
+    list, i.e. 2x the number of corners - NOT the number of corners itself). Example: a
+    roof trapezoid, narrower at the top than the body it sits on, computed from plain
+    fractions with no trig:
+        roof_h = int(car_body_h * 0.35)
+        roof_top_w = int(car_body_w * 0.5)
+        roof_bottom_y = car_body_y
+        roof_top_y = car_body_y - roof_h
+        roof_bottom_left_x = car_body_x + int(car_body_w * 0.15)
+        roof_bottom_right_x = car_body_x + int(car_body_w * 0.85)
+        roof_top_left_x = car_body_x + (car_body_w - roof_top_w) // 2
+        roof_top_right_x = roof_top_left_x + roof_top_w
+        points = [roof_bottom_left_x, roof_bottom_y,
+                  roof_top_left_x, roof_top_y,
+                  roof_top_right_x, roof_top_y,
+                  roof_bottom_right_x, roof_bottom_y]
+        pdb.gimp_image_select_polygon(image, CHANNEL_OP_REPLACE, len(points), points)
+        pdb.gimp_context_set_foreground((r, g, b))
+        pdb.gimp_edit_fill(drawable, FOREGROUND_FILL)
+        pdb.gimp_selection_none(image)"""
 
 COMMON_PROCEDURES = """Common GIMP procedures (baseline, always available):
 - pdb.gimp_image_undo_group_start / pdb.gimp_image_undo_group_end(image)
