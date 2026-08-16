@@ -36,7 +36,7 @@ RULES:
 10. If you're unsure about an API call, say so — don't guess.\"\"\"
 """
 
-VISION_MODELFILE = """FROM llama3.2-vision:11b
+VISION_MODELFILE = """FROM ministral-3:14b
 
 PARAMETER temperature 0.3
 PARAMETER num_predict 2048

@@ -39,6 +39,8 @@ VISION_MODEL_FAMILIES: list[str] = [
     "moondream",
     "gemma3",
     "minicpm-v",
+    "ministral-3",
+    "qwen3-vl",
 ]
 
 EMBED_MODEL_PREFERENCE: list[str] = [

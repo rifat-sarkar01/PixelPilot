@@ -105,7 +105,7 @@ class _PdbAlias(object):
             return self._edit_blend
         if name == "gimp_pencil":
             return self._pencil
-        return getattr(self._pdb, name)
+        return _CorrectingProc(self._pdb, name)
 
     def _find_image(self, args):
         for a in args:
@@ -268,6 +268,79 @@ class _PdbAlias(object):
         if image is None:
             image = self._find_image(args)
         return getattr(self._pdb, proc)(image, CHANNEL_OP_REPLACE, x, y, width, height)
+
+
+# ------------------------------------------------------------ typo correction
+
+_PDB_NAME_CACHE = {"names": None}
+
+
+def _all_pdb_procedure_names(real_pdb):
+    """Every procedure name the live GIMP PDB actually has registered, queried
+    once and cached. Source of truth is GIMP itself, not a bundled static
+    list, so this works for the full ~2000-procedure PDB, not just the small
+    curated set PixelPilot ships few-shot examples for."""
+    if _PDB_NAME_CACHE["names"] is not None:
+        return _PDB_NAME_CACHE["names"]
+    names = set()
+    try:
+        result = real_pdb.query(".*", ".*", ".*", ".*", ".*", ".*", ".*")
+        if result and isinstance(result[0], (list, tuple)):
+            result = result[0]
+        for raw in result:
+            names.add(str(raw).replace("-", "_"))
+    except Exception:  # noqa: BLE001 - introspection failing must not break execution
+        pass
+    _PDB_NAME_CACHE["names"] = names
+    return names
+
+
+def _closest_pdb_name(real_pdb, name, cutoff=0.75):
+    import difflib
+    candidates = _all_pdb_procedure_names(real_pdb)
+    if not candidates or name in candidates:
+        return None
+    matches = difflib.get_close_matches(name, candidates, n=1, cutoff=cutoff)
+    return matches[0] if matches else None
+
+
+def _looks_like_missing_procedure(exc):
+    text = str(exc).lower()
+    return ("procedure" in text and ("not found" in text or "does not exist" in text
+                                      or "no such" in text or "unknown" in text))
+
+
+class _CorrectingProc(object):
+    """Lazily resolves one PDB attribute. If GIMP itself reports the name
+    doesn't exist (e.g. a hallucinated typo like ``gimp_image_select_ipse``
+    for ``gimp_image_select_ellipse``), retries once against the closest
+    real procedure name from the live PDB before giving up. This only ever
+    engages after GIMP has confirmed the original name is invalid, so it
+    can't misfire on a real call this proxy simply doesn't special-case."""
+
+    def __init__(self, real_pdb, name):
+        self._pdb = real_pdb
+        self._name = name
+
+    def __call__(self, *args, **kwargs):
+        try:
+            return getattr(self._pdb, self._name)(*args, **kwargs)
+        except AttributeError:
+            missing = True
+        except Exception as exc:  # noqa: BLE001 - only intercept "not found" style errors
+            if not _looks_like_missing_procedure(exc):
+                raise
+            missing = True
+        if not missing:  # pragma: no cover - unreachable, kept for clarity
+            raise AttributeError(self._name)
+        corrected = _closest_pdb_name(self._pdb, self._name)
+        if not corrected:
+            raise AttributeError("Unknown PDB procedure: %s" % self._name)
+        sys.stdout.write(
+            "[pixelpilot] %r is not a real PDB procedure - retrying as %r\n"
+            % (self._name, corrected)
+        )
+        return getattr(self._pdb, corrected)(*args, **kwargs)
 
 
 # Generated scripts start with "from gimpfu import *", which would otherwise
