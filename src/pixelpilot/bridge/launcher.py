@@ -342,37 +342,53 @@ def enable_krita_plugin(module_name: str = "pixelpilot_krita") -> None:
     Deploying the plugin files is necessary but NOT sufficient - Krita only
     loads a pykrita plugin's ``setup()`` (which is what starts the bridge
     socket) if it's been enabled via the Python Plugin Manager, and that flag
-    is just a line in this ini-style config file: `enable_<module>=true`
-    under `[python]`. Writing it directly here is exactly what checking the
+    is just a line in this ini-style config file: ``enable_<module>=true``
+    under ``[python]``. Writing it directly here is exactly what checking the
     box in the UI would have done, so a fresh Krita install can pick up and
     start the bridge automatically on first launch instead of silently never
     running the plugin at all.
+
+    IMPORTANT: kritarc is NOT a standard INI file. It starts with bare
+    ``key=value`` lines before any ``[section]`` header, so configparser
+    cannot parse it. We operate on lines directly to avoid corrupting the
+    file.
 
     This intentionally never raises - if it fails for any reason (permissions,
     unexpected file format, etc.) the caller should still proceed with
     deployment and launch; worst case the user falls back to enabling the
     plugin manually, exactly as before this existed.
     """
-    import configparser
-
     path = _kritarc_path()
+    key = f"enable_{module_name}=true"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        parser = configparser.ConfigParser(strict=False)
-        # kritarc is INI-like but not always strictly compliant (duplicate
-        # keys, stray values) - tolerate a parse failure and just start a new
-        # file section rather than lose the user's existing settings to an
-        # exception, or worse, write a half-broken file over them.
         if path.is_file():
-            try:
-                parser.read(path, encoding="utf-8")
-            except configparser.Error:
-                pass
-        if not parser.has_section("python"):
-            parser.add_section("python")
-        parser.set("python", f"enable_{module_name}", "true")
-        with path.open("w", encoding="utf-8") as fh:
-            parser.write(fh, space_around_delimiters=False)
+            lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+        else:
+            lines = []
+
+        # Check if the key already exists
+        for line in lines:
+            if line.strip() == key:
+                return  # Already enabled
+
+        # Find the [python] section and insert after it
+        inserted = False
+        new_lines = []
+        for line in lines:
+            new_lines.append(line)
+            if line.strip() == "[python]":
+                new_lines.append(key + "\n")
+                inserted = True
+
+        # If no [python] section found, append one at the end
+        if not inserted:
+            if new_lines and not new_lines[-1].endswith("\n"):
+                new_lines.append("\n")
+            new_lines.append("[python]\n")
+            new_lines.append(key + "\n")
+
+        path.write_text("".join(new_lines), encoding="utf-8")
     except OSError:
         pass
 
