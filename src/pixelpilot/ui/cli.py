@@ -20,7 +20,14 @@ from rich.table import Table
 from pixelpilot import __version__
 from pixelpilot.bridge import CanvasStateTracker, GimpBridge, KritaBridge
 from pixelpilot.bridge.base import BridgeConnectionError, BridgeExecutionError
-from pixelpilot.bridge.launcher import LauncherError, launch_and_wait
+from pixelpilot.bridge.launcher import (
+    LauncherError,
+    find_krita_binary,
+    get_krita_connection_failure_message,
+    launch_and_wait,
+    launch_krita_and_wait,
+    verify_krita_plugin,
+)
 from pixelpilot.codegen import (
     GimpCodeGen,
     KritaCodeGen,
@@ -55,6 +62,7 @@ class PixelPilotCLI:
         self.vision_enabled = settings.feedback.vision_enabled and not args.no_vision
 
         self.code_model = args.model or settings.ollama.code_model
+        self.vision_model = getattr(args, "vision_model", None) or settings.ollama.vision_model
         self.client = OllamaClient(settings.ollama.base_url)
         self.ollama_ok = self.client.ping()
         self.bridge = self._create_bridge()
@@ -82,8 +90,11 @@ class PixelPilotCLI:
             return
 
         backend = getattr(self.settings.editor, self.editor)
-        if auto_launch and self.editor == "gimp" and backend.auto_launch:
-            self._auto_launch_gimp(backend)
+        if auto_launch and backend.auto_launch:
+            if self.editor == "gimp":
+                self._auto_launch_gimp(backend)
+            elif self.editor == "krita":
+                self._auto_launch_krita(backend)
             self._connect_once()
 
     def _connect_once(self) -> bool:
@@ -131,6 +142,46 @@ class PixelPilotCLI:
                 "try /connect again in a moment, or check that the PixelPilot plugin "
                 "is installed.[/yellow]"
             )
+
+    def _auto_launch_krita(self, backend) -> None:
+        self.console.print(
+            "[dim]Krita not detected - deploying the PixelPilot plugin and "
+            f"launching Krita from {backend.binary_path or 'D:/Krita'}...[/dim]"
+        )
+
+        def _tick() -> None:
+            self.console.print("[dim]  still waiting for Krita to start...[/dim]")
+
+        try:
+            # launch_krita_and_wait() handles deploy -> verify -> enable ->
+            # launch internally (and raises LauncherError with a clear message
+            # if deployment itself fails for a structural reason, e.g. the
+            # plugin source can't be found). Checking verify_krita_plugin()
+            # here BEFORE that call ran was the actual bug behind Krita never
+            # starting on a fresh machine: nothing has been deployed yet on a
+            # first-ever run, so that pre-check always failed and returned
+            # immediately - Krita was never even launched.
+            came_up = launch_krita_and_wait(
+                host=backend.host,
+                port=backend.port,
+                binary_path=backend.binary_path,
+                timeout=backend.launch_timeout,
+                on_progress=_tick,
+            )
+        except LauncherError as exc:
+            self.console.print(f"[yellow]{exc}[/yellow]")
+            return
+
+        if came_up:
+            self.console.print("[green]Krita is up and the PixelPilot bridge is connected.[/green]")
+        else:
+            # Detailed diagnostic message
+            binary = find_krita_binary(backend.binary_path)
+            diag = get_krita_connection_failure_message(
+                host=backend.host, port=backend.port, binary=binary
+            )
+            self.console.print(f"[yellow]{diag}[/yellow]")
+
 
     # ------------------------------------------------------------------- run
 
@@ -214,7 +265,7 @@ class PixelPilotCLI:
         table.add_row("Code model", self.code_model)
         table.add_row(
             "Vision model",
-            f"{self.settings.ollama.vision_model}  "
+            f"{self.vision_model}  "
             f"{'[enabled]' if self.vision_enabled else '[disabled]'}",
         )
         bridge_state = "connected" if self.bridge_ok else "NOT CONNECTED"
@@ -224,11 +275,18 @@ class PixelPilotCLI:
         table.add_row("Safety mode", self.mode)
         self.console.print(Panel(table, title="Status", border_style="blue"))
         if not self.bridge_ok:
-            hint = (
-                "Run /connect to launch GIMP with the PixelPilot bridge."
-                if editor == "gimp"
-                else f"Open {editor.title()} with the PixelPilot plugin enabled, then run /connect."
-            )
+            if editor == "krita":
+                ok, msg = verify_krita_plugin()
+                if ok:
+                    hint = (
+                        "The plugin is deployed. In Krita, go to:\n"
+                        "  Settings -> Configure Krita -> Python Plugin Manager\n"
+                        "  Enable 'PixelPilot' and restart Krita, then run /connect."
+                    )
+                else:
+                    hint = f"{msg}\nRun /connect to re-deploy the plugin."
+            else:
+                hint = "Run /connect to launch GIMP with the PixelPilot bridge."
             self.console.print(f"[dim]{hint}[/dim]")
 
     # ------------------------------------------------------------- messaging
@@ -307,7 +365,7 @@ class PixelPilotCLI:
 
         width, height = (list(self.tracker.state.dimensions) + [None, None])[:2]
         planner = VisionPlanner(
-            self.client, model=self.settings.ollama.vision_model, enabled=self.vision_enabled
+            self.client, model=self.vision_model, enabled=self.vision_enabled
         )
         self.console.print("[dim]Vision model is planning the scene...[/dim]")
         result = planner.plan(text, screenshot, width=width, height=height)
@@ -488,7 +546,7 @@ class PixelPilotCLI:
         from pixelpilot.feedback.vision import VisionAnalyzer
 
         analyzer = VisionAnalyzer(
-            self.client, model=self.settings.ollama.vision_model, enabled=self.vision_enabled
+            self.client, model=self.vision_model, enabled=self.vision_enabled
         )
         self.console.print("[dim]Analyzing result with vision model...[/dim]")
         result = analyzer.analyze(screenshot, context=f"Last script:\n{script[:500]}")
