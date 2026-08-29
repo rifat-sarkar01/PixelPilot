@@ -10,7 +10,7 @@ from rich.console import Console
 
 from pixelpilot.ollama.client import OllamaClient
 
-CODER_MODELFILE = """FROM qwen2.5-coder:14b
+CODER_MODELFILE = """FROM qwen3:14b
 
 PARAMETER temperature 0.2
 PARAMETER top_p 0.9
@@ -36,7 +36,7 @@ RULES:
 10. If you're unsure about an API call, say so — don't guess.\"\"\"
 """
 
-VISION_MODELFILE = """FROM ministral-3:14b
+VISION_MODELFILE = """FROM llava:13b
 
 PARAMETER temperature 0.3
 PARAMETER num_predict 2048

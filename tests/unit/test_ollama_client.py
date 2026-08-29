@@ -112,3 +112,41 @@ def test_connection_error_raises():
     client = OllamaClient(transport=_mock_transport(handler))
     with pytest.raises(OllamaConnectionError):
         client.list_models()
+
+
+def test_think_false_passed_in_payload():
+    """think=False must appear in the request body for hybrid-reasoning models."""
+    captured = {}
+
+    def handler(request):
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"message": {"role": "assistant", "content": "ok"}})
+
+    client = OllamaClient(transport=_mock_transport(handler))
+    client.chat("m", [{"role": "user", "content": "hi"}], stream=False, think=False)
+    assert captured["body"]["think"] is False
+
+
+def test_think_true_passed_in_payload():
+    captured = {}
+
+    def handler(request):
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"message": {"role": "assistant", "content": "ok"}})
+
+    client = OllamaClient(transport=_mock_transport(handler))
+    client.chat("m", [{"role": "user", "content": "hi"}], stream=False, think=True)
+    assert captured["body"]["think"] is True
+
+
+def test_think_not_sent_when_omitted():
+    """When think is not passed, it must not appear in the payload."""
+    captured = {}
+
+    def handler(request):
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"message": {"role": "assistant", "content": "ok"}})
+
+    client = OllamaClient(transport=_mock_transport(handler))
+    client.chat("m", [{"role": "user", "content": "hi"}], stream=False)
+    assert "think" not in captured["body"]

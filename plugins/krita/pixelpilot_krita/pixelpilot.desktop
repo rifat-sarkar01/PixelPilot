@@ -1,11 +1,6 @@
 [Desktop Entry]
 Type=Service
 ServiceTypes=Krita/PythonPlugin
+X-KDE-Library=pixelpilot_krita
 Name=PixelPilot
-Comment=Local Ollama-powered editing controller for Krita.
-Comment[en]=Local Ollama-powered editing controller for Krita.
-Icon=pixelpilot
-MimeType=
-Version=1.0
-X-Krita-Manual=manual_pixelpilot.html
-X-Krita-Docker=PixelPilotDocker:right
+Comment=AI-powered local photo editing controller (Ollama + GIMP/Krita)

@@ -1,28 +1,68 @@
 """PixelPilot Krita plugin - socket bridge into Krita's PyKrita environment.
 
-Same JSON-over-TCP protocol as the GIMP plugin (``PXPT1`` magic + 4-byte length).
-Runs inside Krita via the pykrita plugin loader.
+Protocol: JSON-over-TCP with a ``PXPT1`` magic prefix + 4-byte big-endian
+length, identical to the GIMP plugin so the same SocketEditorBridge client
+works for both editors.
+
+Supported commands
+------------------
+execute       - exec() a Python script in Krita's namespace, return result
+canvas_state  - structured canvas info (dimensions, layers, active layer …)
+screenshot    - current canvas flattened to base64-encoded PNG bytes
+undo          - Krita document undo
+redo          - Krita document redo
+
+Installation (automatic via PixelPilot launcher)
+-------------------------------------------------
+The PixelPilot CLI auto-deploys this package into::
+
+    %APPDATA%/krita/pykrita/pixelpilot_krita/        (Windows)
+    ~/Library/Application Support/krita/pykrita/     (macOS)
+    ~/.local/share/krita/pykrita/                    (Linux)
+
+along with ``pixelpilot_krita.desktop`` and restarts Krita.
+You can also do it manually - see README.md.
 """
 
+from __future__ import annotations
+
+import base64
+import io
 import json
 import socket
 import struct
 import threading
+import traceback
 
 try:
-    from krita import Krita
-except Exception:  # noqa: S110, BLE001 - imported outside Krita (e.g. for linting)
-    pass
+    from krita import DockWidget, DockWidgetFactory, DockWidgetFactoryBase, Krita
+    _KRITA_AVAILABLE = True
+except Exception:  # noqa: BLE001 - imported outside Krita (linting / tests)
+    _KRITA_AVAILABLE = False
 
-from PyQt5.QtWidgets import QLabel, QVBoxLayout, QWidget
+try:
+    from PyQt5.QtCore import QTimer, pyqtSignal
+    from PyQt5.QtGui import QColor, QFont
+    from PyQt5.QtWidgets import (
+        QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QWidget
+    )
+    _QT_AVAILABLE = True
+except Exception:  # noqa: BLE001
+    _QT_AVAILABLE = False
 
+# ---------------------------------------------------------------------------
+# Protocol constants
+# ---------------------------------------------------------------------------
 PROTOCOL_MAGIC = b"PXPT1"
 HOST = "127.0.0.1"
 PORT = 10020
 
+# ---------------------------------------------------------------------------
+# Low-level framing helpers
+# ---------------------------------------------------------------------------
 
-def _send(sock: socket.socket, payload: dict) -> None:
-    data = json.dumps(payload).encode("utf-8")
+def _send_frame(sock: socket.socket, payload: dict) -> None:
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     sock.sendall(PROTOCOL_MAGIC + struct.pack(">I", len(data)) + data)
 
 
@@ -31,7 +71,7 @@ def _recv_exact(sock: socket.socket, n: int) -> bytes:
     while len(buf) < n:
         chunk = sock.recv(n - len(buf))
         if not chunk:
-            raise ConnectionError("Client disconnected")
+            raise ConnectionError("Client disconnected mid-frame")
         buf.extend(chunk)
     return bytes(buf)
 
@@ -41,135 +81,372 @@ def _read_frame(sock: socket.socket) -> dict:
     if magic != PROTOCOL_MAGIC:
         raise ValueError(f"Bad magic: {magic!r}")
     length = struct.unpack(">I", _recv_exact(sock, 4))[0]
-    return json.loads(_recv_exact(sock, length).decode("utf-8"))
+    body = _recv_exact(sock, length)
+    return json.loads(body.decode("utf-8"))
 
+# ---------------------------------------------------------------------------
+# Canvas helpers
+# ---------------------------------------------------------------------------
 
-def _document():
+def _active_document():
+    if not _KRITA_AVAILABLE:
+        raise RuntimeError("Not running inside Krita.")
     app = Krita.instance()
     doc = app.activeDocument()
     if doc is None:
-        raise RuntimeError("No active document open.")
+        raise RuntimeError("No active document is open in Krita.")
     return app, doc
 
 
 def _canvas_state() -> dict:
-    _, doc = _document()
+    app, doc = _active_document()
     layers = []
-    root = doc.rootNode()
 
-    def walk(node, depth=0):
-        name = node.name() if hasattr(node, "name") else str(node)
-        layers.append(
-            {
-                "name": name,
-                "type": node.type() if hasattr(node, "type") else "unknown",
-                "visible": node.visible() if hasattr(node, "visible") else True,
-                "opacity": int((node.opacity() if hasattr(node, "opacity") else 1.0) * 100),
-                "blend_mode": node.blendingMode() if hasattr(node, "blendingMode") else "normal",
-                "locked": False,
-            }
-        )
-        if hasattr(node, "childNodes"):
+    def _walk(node):
+        try:
+            layers.append({
+                "name": node.name(),
+                "type": node.type(),
+                "visible": node.visible(),
+                "opacity": round(node.opacity() / 255 * 100),
+                "blend_mode": node.blendingMode(),
+                "locked": node.locked(),
+            })
+        except Exception:  # noqa: BLE001
+            pass
+        try:
             for child in node.childNodes():
-                walk(child, depth + 1)
+                _walk(child)
+        except Exception:  # noqa: BLE001
+            pass
 
-    walk(root)
-    active = doc.activeNode()
+    try:
+        _walk(doc.rootNode())
+    except Exception:  # noqa: BLE001
+        pass
+
+    active = None
+    try:
+        active_node = doc.activeNode()
+        active = active_node.name() if active_node else None
+    except Exception:  # noqa: BLE001
+        pass
+
+    sel = None
+    sel_bounds = None
+    try:
+        s = doc.selection()
+        if s is not None:
+            sel = True
+            sel_bounds = [s.x(), s.y(), s.width(), s.height()]
+    except Exception:  # noqa: BLE001
+        pass
+
     return {
-        "image_path": doc.fileName() if hasattr(doc, "fileName") else None,
+        "image_path": doc.fileName() or None,
         "dimensions": [doc.width(), doc.height()],
-        "color_mode": str(doc.colorModel()) if hasattr(doc, "colorModel") else "RGBA",
-        "bit_depth": 8,
-        "dpi": doc.resolution() if hasattr(doc, "resolution") else 72,
+        "color_mode": doc.colorModel() or "RGBA",
+        "bit_depth": doc.colorDepth() or "U8",
+        "dpi": doc.resolution(),
         "layers": layers,
-        "active_layer": active.name() if active and hasattr(active, "name") else None,
-        "has_selection": False,
-        "selection_bounds": None,
+        "active_layer": active,
+        "has_selection": bool(sel),
+        "selection_bounds": sel_bounds,
         "undo_depth": 0,
     }
 
 
-def _handle(cmd: dict) -> dict:
-    name = cmd.get("cmd")
-    if name == "execute":
+def _screenshot_png() -> str:
+    """Export the flattened canvas as base64-encoded PNG bytes."""
+    _app, doc = _active_document()
+    # Krita's thumbnail() returns a QImage; exportImage writes to a path.
+    # We use a temp in-memory approach via QByteArray.
+    try:
+        from PyQt5.QtCore import QBuffer, QByteArray, QIODevice
+        from PyQt5.QtGui import QImage
+
+        # Flatten the document to a QImage
+        img: QImage = doc.thumbnail(doc.width(), doc.height())
+        if img is None or img.isNull():
+            raise RuntimeError("Could not generate thumbnail from Krita document.")
+
+        # Encode to PNG in memory
+        ba = QByteArray()
+        buf = QBuffer(ba)
+        buf.open(QIODevice.WriteOnly)
+        img.save(buf, "PNG")
+        buf.close()
+
+        return base64.b64encode(bytes(ba)).decode("ascii")
+    except Exception:
+        # Fallback: export to a temp file
+        import os
+        import tempfile
+        tmp = tempfile.mktemp(suffix=".png")
         try:
-            code = cmd.get("code", "")
-            compiled = compile(code, "<pixelpilot-plugin>", "exec")
-            namespace = {"Krita": Krita, "Krita_instance": Krita.instance, "__builtins__": __builtins__}
-            exec(compiled, namespace)  # noqa: S102 - core purpose: run generated scripts
-            return {"status": "ok", "result": None}
+            doc.exportImage(tmp, doc.exportConfiguration())
+            with open(tmp, "rb") as fh:
+                return base64.b64encode(fh.read()).decode("ascii")
+        finally:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
+# ---------------------------------------------------------------------------
+# Command dispatcher
+# ---------------------------------------------------------------------------
+
+def _handle_command(cmd: dict) -> dict:
+    name = cmd.get("cmd", "")
+
+    if name == "execute":
+        code = cmd.get("code", "")
+        try:
+            namespace: dict = {}
+            if _KRITA_AVAILABLE:
+                namespace["Krita"] = Krita
+                namespace["Application"] = Krita.instance()
+                namespace["Document"] = (
+                    Krita.instance().activeDocument()
+                    if Krita.instance().activeDocument() else None
+                )
+            compiled = compile(code, "<pixelpilot>", "exec")
+            exec(compiled, namespace)  # noqa: S102 - intentional scripting
+            result = namespace.get("_result")
+            return {"status": "ok", "result": result}
         except Exception as exc:  # noqa: BLE001
-            return {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
+            return {"status": "error", "error": f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"}
+
     if name == "canvas_state":
         try:
             return {"status": "ok", "result": _canvas_state()}
         except Exception as exc:  # noqa: BLE001
             return {"status": "error", "error": str(exc)}
-    if name == "undo":
-        doc = _document()[1]
-        doc.undo()
-        return {"status": "ok", "result": None}
-    if name == "redo":
-        doc = _document()[1]
-        doc.redo()
-        return {"status": "ok", "result": None}
+
     if name == "screenshot":
-        return {"status": "error", "error": "Krita screenshot capture not implemented in scaffold."}
-    return {"status": "error", "error": f"Unknown command: {name}"}
+        try:
+            return {"status": "ok", "result": _screenshot_png()}
+        except Exception as exc:  # noqa: BLE001
+            return {"status": "error", "error": str(exc)}
+
+    if name == "undo":
+        try:
+            _, doc = _active_document()
+            doc.undo()
+            return {"status": "ok", "result": None}
+        except Exception as exc:  # noqa: BLE001
+            return {"status": "error", "error": str(exc)}
+
+    if name == "redo":
+        try:
+            _, doc = _active_document()
+            doc.redo()
+            return {"status": "ok", "result": None}
+        except Exception as exc:  # noqa: BLE001
+            return {"status": "error", "error": str(exc)}
+
+    return {"status": "error", "error": f"Unknown command: {name!r}"}
+
+# ---------------------------------------------------------------------------
+# TCP server
+# ---------------------------------------------------------------------------
+
+# Tracks how many clients are currently connected (for the docker UI).
+_active_clients: int = 0
+_active_clients_lock = threading.Lock()
+
+# Called by the docker when the client count changes.
+_on_client_change = None  # type: ignore[assignment]
 
 
 def _handle_client(conn: socket.socket) -> None:
+    global _active_clients
+    with _active_clients_lock:
+        _active_clients += 1
+    try:
+        if _on_client_change:
+            _on_client_change(_active_clients)
+    except Exception:  # noqa: BLE001
+        pass
+
     try:
         while True:
             cmd = _read_frame(conn)
-            _send(conn, _handle(cmd))
-    except (ConnectionError, OSError, ValueError):
+            reply = _handle_command(cmd)
+            _send_frame(conn, reply)
+    except (ConnectionError, OSError, ValueError, EOFError):
         pass
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except OSError:
+            pass
+        with _active_clients_lock:
+            _active_clients -= 1
+        try:
+            if _on_client_change:
+                _on_client_change(_active_clients)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _server_loop() -> None:
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind((HOST, PORT))
-    server.listen(5)
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        srv.bind((HOST, PORT))
+    except OSError:
+        return
+    srv.listen(5)
     while True:
-        conn, _ = server.accept()
-        threading.Thread(target=_handle_client, args=(conn,), daemon=True).start()
+        try:
+            conn, _addr = srv.accept()
+        except OSError:
+            break
+        t = threading.Thread(target=_handle_client, args=(conn,), daemon=True)
+        t.start()
 
 
 def start_bridge() -> None:
-    if any(t.name == "pixelpilot-bridge" for t in threading.enumerate()):
-        return
-    thread = threading.Thread(target=_server_loop, name="pixelpilot-bridge", daemon=True)
+    """Start the TCP bridge server thread (idempotent)."""
+    for t in threading.enumerate():
+        if t.name == "pixelpilot-krita-bridge":
+            return  # Already running
+    thread = threading.Thread(target=_server_loop, name="pixelpilot-krita-bridge", daemon=True)
     thread.start()
 
+# ---------------------------------------------------------------------------
+# Docker panel (shown inside Krita's docker system)
+# ---------------------------------------------------------------------------
 
-class PixelPilotDocker(QWidget):
-    """Minimal docker showing the bridge status."""
+if _QT_AVAILABLE and _KRITA_AVAILABLE:
 
-    def __init__(self):
-        super().__init__()
-        layout = QVBoxLayout()
-        layout.addWidget(QLabel(f"PixelPilot bridge running on port {PORT}"))
-        self.setLayout(layout)
+    class PixelPilotDocker(DockWidget):
+        """Docker panel showing bridge status and live connection count."""
 
+        # Signal emitted from background threads to update UI on the main thread
+        _client_changed = pyqtSignal(int)
 
-class Extension:
-    """Krita extension entry point."""
+        def __init__(self):
+            super().__init__()
+            self.setWindowTitle("PixelPilot")
+            self._build_ui()
+            self._client_changed.connect(self._update_status_label)
+            # Register callback so background threads can signal us
+            global _on_client_change
+            _on_client_change = self._on_client_count_changed
+            # Refresh status every 2 s even if no connections change
+            self._timer = QTimer(self)
+            self._timer.timeout.connect(self._refresh)
+            self._timer.start(2000)
 
-    def __init__(self, parent):
-        self.parent = parent
+        def _build_ui(self):
+            root = QWidget()
+            layout = QVBoxLayout()
+            layout.setContentsMargins(8, 8, 8, 8)
+            layout.setSpacing(6)
 
-    def setup(self):
+            # Title
+            title = QLabel("PixelPilot Bridge")
+            font = QFont()
+            font.setBold(True)
+            font.setPointSize(10)
+            title.setFont(font)
+            layout.addWidget(title)
+
+            # Port info
+            port_label = QLabel(f"Listening on  {HOST}:{PORT}")
+            port_label.setStyleSheet("color: #888; font-size: 9pt;")
+            layout.addWidget(port_label)
+
+            # Status indicator
+            self._status_label = QLabel("● Starting…")
+            self._status_label.setStyleSheet("color: #f0a500; font-size: 9pt;")
+            layout.addWidget(self._status_label)
+
+            # Connection count
+            self._conn_label = QLabel("Connections: 0")
+            self._conn_label.setStyleSheet("color: #aaa; font-size: 9pt;")
+            layout.addWidget(self._conn_label)
+
+            # Divider hint
+            hint = QLabel("Run  pixelpilot --editor krita  to connect.")
+            hint.setWordWrap(True)
+            hint.setStyleSheet("color: #666; font-size: 8pt; margin-top: 4px;")
+            layout.addWidget(hint)
+
+            layout.addStretch()
+
+            root.setLayout(layout)
+            self.setWidget(root)
+
+        def _on_client_count_changed(self, n: int):
+            """Called from background thread - emit signal to update on main thread."""
+            try:
+                self._client_changed.emit(n)
+            except Exception:  # noqa: BLE001
+                pass
+
+        def _update_status_label(self, n: int):
+            if n > 0:
+                self._status_label.setText("● Connected")
+                self._status_label.setStyleSheet("color: #4caf50; font-size: 9pt;")
+            else:
+                self._status_label.setText("● Waiting for PixelPilot…")
+                self._status_label.setStyleSheet("color: #f0a500; font-size: 9pt;")
+            self._conn_label.setText(f"Connections: {n}")
+
+        def _refresh(self):
+            with _active_clients_lock:
+                n = _active_clients
+            self._update_status_label(n)
+
+        def canvasChanged(self, canvas):
+            pass  # Required override
+
+else:
+    # Fallback when running outside Krita (e.g. for tests / linting)
+    class PixelPilotDocker:  # type: ignore[no-redef]
         pass
 
-    def createActions(self, window):
-        pass
+# ---------------------------------------------------------------------------
+# Krita extension entry point
+# ---------------------------------------------------------------------------
 
+if _KRITA_AVAILABLE:
 
-# Krita's pykrita loader looks for a module-level `Krita.instance().addExtension(...)`
-# registration in the extension's `init.py`; the docker factory is referenced from
-# pixelpilot.desktop via `DockerManager` in the parent package. For the scaffold this
-# module provides the socket bridge plus the docker widget class.
+    class PixelPilotExtension(Krita.Extension if hasattr(Krita, "Extension") else object):  # type: ignore[misc]
+        """Krita Extension: starts the bridge socket on Krita startup."""
+
+        def __init__(self, parent):
+            super().__init__(parent)
+
+        def setup(self):
+            pass
+
+        def createActions(self, window):
+            pass
+
+    def _register():
+        app = Krita.instance()
+        if app is None:
+            return
+        start_bridge()
+        try:
+            factory = DockWidgetFactory(
+                "PixelPilotDocker",
+                DockWidgetFactoryBase.DockRight,
+                PixelPilotDocker,
+            )
+            app.addDockWidgetFactory(factory)
+        except Exception:  # noqa: BLE001
+            pass
+
+    # Krita calls the module-level `setup()` when the plugin is loaded.
+    def setup():
+        _register()
+
+else:
+    # Outside Krita - start bridge anyway (useful for testing the socket)
+    start_bridge()

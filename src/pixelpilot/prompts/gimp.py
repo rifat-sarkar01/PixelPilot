@@ -88,7 +88,15 @@ GOTCHAS = """GIMP scripting rules (Python-Fu):
         pdb.gimp_context_set_foreground((r, g, b))
         pdb.gimp_edit_fill(drawable, FOREGROUND_FILL)
     A flat fill is correct far more often than a gradient is worth the risk.
-19. For a trapezoid, triangle, or any other angled/non-rectangular shape (e.g. a car
+19. GIMP 2.10 Python-Fu runs Python 2.7. NEVER use f-strings (f"..." or f'...') - they
+    are Python 3.6+ only and cause SyntaxError. Use old-style formatting instead:
+        WRONG:  msg = f"Layer {name} created"
+                raise Exception(f"Failed: {e}")
+        RIGHT:  msg = "Layer %s created" % name
+                raise Exception("Failed: %s" % str(e))
+    Also forbidden: walrus operator (:=), match/case statements, type hints (def foo(x: int)),
+    and any other Python 3-only syntax.
+20. For a trapezoid, triangle, or any other angled/non-rectangular shape (e.g. a car
     hood or roof), use gimp_image_select_polygon - do NOT reach for gimp_edit_blend for
     this, and do NOT use trigonometry (math.cos/math.sin) unless the angle genuinely
     isn't a plain fraction of width/height. In GIMP Python-Fu (gimpfu), its signature is

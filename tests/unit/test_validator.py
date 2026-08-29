@@ -175,6 +175,38 @@ def test_injected_shape_helpers_accepted():
     assert report.unknown_api_calls == []
 
 
+def test_fstring_double_quote_fails():
+    script = 'name = "test"\nmsg = f"Layer {name} created"\n'
+    report = SafetyValidator(editor="gimp").validate(script)
+    assert not report.passed
+    assert any("Forbidden pattern" in e for e in report.errors)
+
+
+def test_fstring_single_quote_fails():
+    script = "name = 'test'\nmsg = f'Layer {name} created'\n"
+    report = SafetyValidator(editor="gimp").validate(script)
+    assert not report.passed
+
+
+def test_fstring_uppercase_F_fails():
+    script = 'name = "test"\nmsg = F"Layer {name} created"\n'
+    report = SafetyValidator(editor="gimp").validate(script)
+    assert not report.passed
+
+
+def test_percent_formatting_passes():
+    script = "name = 'test'\nmsg = 'Layer %s created' % name\n"
+    report = SafetyValidator(editor="gimp").validate(script)
+    assert report.passed
+
+
+def test_gimp_message_not_flagged_as_hallucination():
+    script = "pdb.gimp_message('Hello from PixelPilot')\n"
+    report = SafetyValidator(editor="gimp").validate(script)
+    assert report.passed
+    assert not any("gimp_message" in c for c in report.unknown_api_calls)
+
+
 class SafetyReportStub:
     passed = True
 

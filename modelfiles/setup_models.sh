@@ -12,7 +12,7 @@ set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-CODER_BASE="qwen2.5-coder:14b"
+CODER_BASE="qwen3:14b"
 VISION_BASE="llama3.2-vision:11b"
 EMBED_BASE="nomic-embed-text"
 

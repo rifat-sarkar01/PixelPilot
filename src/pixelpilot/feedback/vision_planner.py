@@ -95,7 +95,8 @@ class VisionPlanner:
         for attempt in range(max_retries + 1):
             try:
                 response = self.client.chat(
-                    self.model, messages, stream=False, temperature=0.3, timeout=600.0
+                    self.model, messages, stream=False, temperature=0.3, timeout=600.0,
+                    think=False,
                 )
                 content = (response.get("message") or {}).get("content", "")
                 parsed = self._parse_json(content)

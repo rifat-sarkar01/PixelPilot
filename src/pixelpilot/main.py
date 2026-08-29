@@ -18,10 +18,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", type=str, default=None, help="Path to config YAML file")
     parser.add_argument("--editor", type=str, choices=["gimp", "krita"], default=None,
                         help="Target editor (overrides config)")
-    parser.add_argument("--model", type=str, default=None, help="Code model to use")
+    parser.add_argument("--model", type=str, default=None, help="Code/coding LLM model to use (overrides config)")
+    parser.add_argument("--vision-model", type=str, default=None, dest="vision_model",
+                        help="Vision LLM model to use (overrides config)")
     parser.add_argument("--mode", type=str, choices=["auto", "preview", "strict", "dry-run"],
                         default=None, help="Safety confirmation mode")
     parser.add_argument("--no-vision", action="store_true", help="Disable vision feedback")
+    parser.add_argument("--think", action="store_true", default=None,
+                        help="Enable thinking/reasoning pass for hybrid models (e.g. qwen3)")
 
     sub = parser.add_subparsers(dest="command")
 

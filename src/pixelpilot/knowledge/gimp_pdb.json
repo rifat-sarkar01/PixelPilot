@@ -1344,6 +1344,27 @@
         "`segs` must be a FLAT list [x1, y1, x2, y2, ...], not a list of (x, y) tuples - passing tuples will fail.",
         "Do not use gimp_edit_blend to approximate an angled shape like a trapezoid - it is a gradient-fill call, not a shape tool, and its constants (blend mode, paint mode, repeat mode) are extremely easy to get wrong. Use this procedure instead, then fill the resulting selection the normal way with gimp_context_set_foreground + gimp_edit_fill."
       ]
+    },
+    {
+      "name": "gimp-message",
+      "category": "display",
+      "description": "Display a message in the GIMP error console (status bar). Use for debugging or user feedback.",
+      "signature": "pdb.gimp_message(message)",
+      "params": [
+        {
+          "name": "message",
+          "type": "string"
+        }
+      ],
+      "returns": "None",
+      "example": "pdb.gimp_message('Debug: image width is %d' % width)",
+      "version_compat": [
+        "2.10",
+        "3.0"
+      ],
+      "pitfalls": [
+        "Messages appear in the error console, not as a popup dialog."
+      ]
     }
   ]
 }

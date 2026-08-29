@@ -412,8 +412,13 @@ def deploy_krita_plugin() -> Path:
     """Copy the PixelPilot plugin package + .desktop file into Krita's pykrita dir.
 
     Krita expects:
-      <pykrita>/pixelpilot_krita/          <- Python package directory
-      <pykrita>/pixelpilot_krita.desktop   <- service descriptor
+      <pykrita>/pixelpilot_krita/                 <- Python package directory
+      <pykrita>/kritapykrita_pixelpilot_krita.desktop <- service descriptor
+
+    The desktop file MUST be named ``kritapykrita_<module>.desktop`` (matching
+    the naming convention of every built-in pykrita plugin) and MUST be
+    UTF-8 without a BOM — Krita's ``KoResourcePaths`` parser cannot find
+    ``[Desktop Entry]`` when a BOM prefix is present.
     """
     source_dir = _krita_plugin_source()
     if source_dir is None:
@@ -432,11 +437,14 @@ def deploy_krita_plugin() -> Path:
         shutil.rmtree(dest_pkg)
     shutil.copytree(source_dir, dest_pkg)
 
-    # Copy the .desktop file one level up (in pykrita/, not inside the package)
+    # Copy the .desktop file one level up (in pykrita/, not inside the package).
+    # Krita's desktop scanner expects the ``kritapykrita_`` prefix convention.
     desktop_src = source_dir / "pixelpilot.desktop"
-    desktop_dst = pykrita / "pixelpilot_krita.desktop"
+    desktop_dst = pykrita / "kritapykrita_pixelpilot_krita.desktop"
     if desktop_src.is_file():
-        shutil.copyfile(desktop_src, desktop_dst)
+        # Read and re-write without BOM to prevent Krita INI parser failures
+        content = desktop_src.read_text(encoding="utf-8-sig")  # utf-8-sig strips BOM
+        desktop_dst.write_text(content, encoding="utf-8")
 
     return dest_pkg
 
@@ -448,7 +456,7 @@ def verify_krita_plugin() -> tuple[bool, str]:
     """
     pykrita = krita_plugin_dir()
     pkg_dir = pykrita / "pixelpilot_krita"
-    desktop_file = pykrita / "pixelpilot_krita.desktop"
+    desktop_file = pykrita / "kritapykrita_pixelpilot_krita.desktop"
     init_file = pkg_dir / "__init__.py"
     plugin_file = pkg_dir / "plugin.py"
 

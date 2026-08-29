@@ -7,6 +7,8 @@ Interactive chat: user intent -> RAG context -> Ollama code model -> safety vali
 from __future__ import annotations
 
 import argparse
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -51,6 +53,34 @@ COMMANDS = {
 _HELP_TEXT = "\n".join(f"  {cmd:<12} {desc}" for cmd, desc in COMMANDS.items())
 
 
+class _Heartbeat:
+    """Print elapsed-time dots while a blocking call is in progress."""
+
+    def __init__(self, console: Console, label: str = "Working", interval: float = 5.0) -> None:
+        self.console = console
+        self.label = label
+        self.interval = interval
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._start = 0.0
+
+    def _run(self) -> None:
+        while not self._stop.wait(self.interval):
+            elapsed = time.monotonic() - self._start
+            self.console.print(f"[dim]  {self.label}... ({elapsed:.0f}s)[/dim]")
+
+    def __enter__(self) -> "_Heartbeat":
+        self._start = time.monotonic()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=1)
+
+
 class PixelPilotCLI:
     def __init__(self, settings: Settings, args: argparse.Namespace) -> None:
         self.settings = settings
@@ -63,6 +93,8 @@ class PixelPilotCLI:
 
         self.code_model = args.model or settings.ollama.code_model
         self.vision_model = getattr(args, "vision_model", None) or settings.ollama.vision_model
+        if getattr(args, "think", None) is not None:
+            settings.ollama.think = args.think
         self.client = OllamaClient(settings.ollama.base_url)
         self.ollama_ok = self.client.ping()
         self.bridge = self._create_bridge()
@@ -315,6 +347,7 @@ class PixelPilotCLI:
 
         # 3. Generate the script.
         if self.ollama_ok:
+            self.console.print("[dim]Generating script...[/dim]")
             script = self._generate_script(text, procedures, example, visual_plan=visual_plan)
         else:
             script = self._demo_generate(text)
@@ -408,13 +441,18 @@ class PixelPilotCLI:
                     messages,
                     stream=self.settings.ollama.stream,
                     temperature=self.settings.ollama.temperature,
+                    think=self.settings.ollama.think,
                 )
                 if self.settings.ollama.stream:
-                    from pixelpilot.ollama.streaming import collect_chat_stream
+                    from pixelpilot.ollama.streaming import collect_chat_stream_with_heartbeat
 
-                    content = collect_chat_stream(response)
+                    def _heartbeat(elapsed: float) -> None:
+                        self.console.print(f"[dim]  ...generating ({elapsed:.0f}s elapsed)[/dim]")
+
+                    content = collect_chat_stream_with_heartbeat(response, on_heartbeat=_heartbeat)
                 else:
-                    content = (response.get("message") or {}).get("content", "")
+                    with _Heartbeat(self.console, "Generating"):
+                        content = (response.get("message") or {}).get("content", "")
             except Exception as exc:  # noqa: BLE001
                 self.console.print(f"[red]Model call failed: {exc}[/red]")
                 return None
@@ -496,8 +534,8 @@ class PixelPilotCLI:
 
     def _execute(self, script: str) -> None:
         if not self.bridge_ok:
-            # GIMP may have finished starting (or been opened manually) since
-            # the last attempt - try a cheap reconnect before giving up.
+            # The editor may have finished starting (or been opened manually)
+            # since the last attempt - try a cheap reconnect before giving up.
             self._connect_once()
         if not self.bridge_ok:
             self.console.print(
@@ -515,15 +553,20 @@ class PixelPilotCLI:
             self._error_recovery(script, str(exc))
             return
 
-        # Always save a PNG snapshot of the result so the user has the image
-        # even if the generated script never wrote a file.
-        self._save_snapshot()
+        # Post-execution steps are best-effort: a dropped bridge connection
+        # (common if Krita reloads a doc) must not crash the entire session.
+        try:
+            # Always save a PNG snapshot of the result so the user has the
+            # image even if the generated script never wrote a file.
+            self._save_snapshot()
 
-        # Feedback: screenshot + vision (or text fallback).
-        if self.vision_enabled:
-            self._vision_feedback(script)
-        else:
-            self._text_feedback()
+            # Feedback: screenshot + vision (or text fallback).
+            if self.vision_enabled:
+                self._vision_feedback(script)
+            else:
+                self._text_feedback()
+        except Exception as exc:  # noqa: BLE001
+            self.console.print(f"[dim]Post-execution step failed (non-fatal): {exc}[/dim]")
 
     def _save_snapshot(self) -> None:
         try:
@@ -544,6 +587,12 @@ class PixelPilotCLI:
             self.console.print(f"[dim]Screenshot unavailable: {exc}[/dim]")
             return
         from pixelpilot.feedback.vision import VisionAnalyzer
+
+        # Refresh canvas state so the tracker reflects post-execution reality.
+        try:
+            self.tracker.update(self.bridge.get_canvas_state())
+        except (BridgeConnectionError, BridgeExecutionError):
+            pass
 
         analyzer = VisionAnalyzer(
             self.client, model=self.vision_model, enabled=self.vision_enabled
@@ -583,9 +632,10 @@ class PixelPilotCLI:
             except Exception:  # noqa: BLE001 - retrieval must not break recovery
                 procedures = []
         fixes_text = ("\nSuggested fixes:\n- " + "\n- ".join(fixes)) if fixes else ""
+        editor_label = self.editor.title()  # e.g. "Krita" or "Gimp"
         prompt = (
-            "A vision model reviewed the result of your GIMP script and it does not match "
-            "the requested image.\n"
+            f"A vision model reviewed the result of your {editor_label} script and it does "
+            "not match the requested image.\n"
             f"Vision assessment: {assessment}\n"
             f"{fixes_text}\n"
             "\nOriginal script:\n```python\n"
@@ -599,9 +649,6 @@ class PixelPilotCLI:
                 else "(none retrieved - rely on your knowledge)"
             )
             + "\n\nWrite a corrected, complete script that produces the desired image. "
-            "If the current canvas holds a wrong result, create a BRAND NEW image with "
-            "pdb.gimp_image_new, show it with pdb.gimp_display_new, and never use opaque "
-            "RGB_IMAGE layers (they hide everything below) - use RGBA_IMAGE. "
             "Output ONLY the corrected code inside a single ```python fenced code block."
         )
         self.console.print(
@@ -614,6 +661,7 @@ class PixelPilotCLI:
                 [{"role": "user", "content": prompt}],
                 stream=self.settings.ollama.stream,
                 temperature=self.settings.ollama.temperature,
+                think=self.settings.ollama.think,
             )
             if self.settings.ollama.stream:
                 content = collect_chat_stream(response)
@@ -638,7 +686,11 @@ class PixelPilotCLI:
             screenshot = self.bridge.capture_screenshot()
         except BridgeConnectionError:
             screenshot = None
-        self.tracker.update(self.bridge.get_canvas_state())
+        # Refresh canvas state - guarded so a dropped bridge never crashes the session.
+        try:
+            self.tracker.update(self.bridge.get_canvas_state())
+        except (BridgeConnectionError, BridgeExecutionError):
+            pass
         analyzer = TextFallbackAnalyzer()
         desc = analyzer.describe(self.tracker.state, screenshot, self.tracker.summarize_changes())
         self.console.print(f"[dim]{desc}[/dim]")

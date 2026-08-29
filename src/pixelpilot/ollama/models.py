@@ -19,6 +19,8 @@ from pixelpilot.config import Settings
 
 # Model families recognised by PixelPilot, ordered best -> acceptable.
 CODE_MODEL_FAMILIES: list[str] = [
+    "qwen3",
+    "qwen3-coder",
     "qwen2.5-coder",
     "deepseek-coder",
     "codestral",
@@ -26,7 +28,6 @@ CODE_MODEL_FAMILIES: list[str] = [
     "llama3.1",
     "llama3.3",
     "qwen2.5",
-    "qwen3-coder",
     "llama3",
     "mistral",
     "phi3",
@@ -39,7 +40,6 @@ VISION_MODEL_FAMILIES: list[str] = [
     "moondream",
     "gemma3",
     "minicpm-v",
-    "ministral-3",
     "qwen3-vl",
 ]
 

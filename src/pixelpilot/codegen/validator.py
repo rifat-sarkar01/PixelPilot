@@ -91,6 +91,10 @@ FORBIDDEN_RAW_PATTERNS = [
     re.compile(r"\bcompile\s*\("),
     re.compile(r"https?://"),
     re.compile(r"\bopen\s*\("),
+    # Python 3.6+ f-strings are forbidden in GIMP Python-Fu (Python 2.7).
+    # Matches f"...", f'...', F"...", F'...' but NOT b"..." or u"...".
+    re.compile(r"""(?:^|[^bBuU])f(['"])""", re.MULTILINE),
+    re.compile(r"""(?:^|[^bBuU])F(['"])""", re.MULTILINE),
 ]
 
 FENCED_CODE_RE = re.compile(

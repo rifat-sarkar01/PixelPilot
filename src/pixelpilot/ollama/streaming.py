@@ -48,6 +48,28 @@ def collect_chat_stream(chunks: Iterator[dict]) -> str:
     return "".join(parts)
 
 
+def collect_chat_stream_with_heartbeat(
+    chunks: Iterator[dict], on_heartbeat: "Callable[[float], None] | None" = None
+) -> str:
+    """Like :func:`collect_chat_stream` but calls *on_heartbeat(elapsed)* when
+    the stream is quiet for more than 2 seconds, giving the caller a chance
+    to print a progress indicator."""
+    import time
+
+    parts: list[str] = []
+    last_print = time.monotonic()
+    for chunk in chunks:
+        if chunk.get("error"):
+            raise OllamaStreamError(str(chunk["error"]))
+        msg = chunk.get("message") or {}
+        parts.append(msg.get("content", ""))
+        now = time.monotonic()
+        if on_heartbeat and (now - last_print) >= 2.0:
+            on_heartbeat(now - (parts and time.monotonic() or now))
+            last_print = now
+    return "".join(parts)
+
+
 def finalize_generate_chunks(chunks: Iterator[dict]) -> str:
     """Alias kept for symmetry with /api/generate callers."""
     return collect_generate_stream(chunks)

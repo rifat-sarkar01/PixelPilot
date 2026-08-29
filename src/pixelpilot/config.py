@@ -30,6 +30,7 @@ class OllamaSettings(BaseModel):
     keep_vision_loaded: bool = False
     auto_select_models: bool = True
     stream: bool = True
+    think: bool = False
 
 
 class EditorBackendSettings(BaseModel):
@@ -44,7 +45,12 @@ class EditorBackendSettings(BaseModel):
 class EditorSettings(BaseModel):
     default: str = "gimp"
     gimp: EditorBackendSettings = Field(default_factory=lambda: EditorBackendSettings(port=10010))
-    krita: EditorBackendSettings = Field(default_factory=lambda: EditorBackendSettings(port=10020))
+    krita: EditorBackendSettings = Field(
+        default_factory=lambda: EditorBackendSettings(
+            port=10020,
+            binary_path="D:/Krita",
+        )
+    )
 
 
 class SafetySettings(BaseModel):
