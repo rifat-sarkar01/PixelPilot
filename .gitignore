@@ -58,3 +58,12 @@ chromadb/
 outputs/
 result_screenshot.png
 *_screenshot.png
+
+# Internal dev / planning docs
+opencode_pixelpilot_fix_prompt.md
+implementation_plan.md
+
+# Build artifacts
+pixelpilot.spec
+modelfiles/
+rebuild_venv.cmd
