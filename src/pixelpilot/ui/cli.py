@@ -1,7 +1,7 @@
-"""CLI / REPL interface (implementation_plan.md §4.6.1 / Phase 1).
+"""CLI / REPL interface.
 
-Interactive chat: user intent -> RAG context -> Ollama code model -> safety validation
--> script preview -> execution (if an editor bridge is reachable).
+Interactive chat: user intent -> IntentRouter -> edit path (unchanged) or
+generate path (new: LLM emits ImagePlan JSON -> deterministic executor -> PNG).
 """
 
 from __future__ import annotations
@@ -37,6 +37,7 @@ from pixelpilot.codegen import (
     extract_code_block,
 )
 from pixelpilot.config import Settings, ensure_config_file, load_settings
+from pixelpilot.generation.router import IntentRouter
 from pixelpilot.ollama.client import OllamaClient
 from pixelpilot.rag.retriever import Retriever
 
@@ -324,6 +325,22 @@ class PixelPilotCLI:
     # ------------------------------------------------------------- messaging
 
     def _handle_message(self, text: str) -> None:
+        """Top-level dispatcher: route to edit or generate path."""
+        router = IntentRouter()
+        intent = router.classify(text)
+        if intent == "generate" and self.ollama_ok:
+            self.console.print("[dim]Intent: generate (draw from scratch)[/dim]")
+            self._handle_generate(text)
+        else:
+            if intent == "generate" and not self.ollama_ok:
+                self.console.print(
+                    "[dim]Generate intent detected but Ollama is unreachable — "
+                    "falling back to edit path (demo mode).[/dim]"
+                )
+            self._handle_edit(text)
+
+    def _handle_edit(self, text: str) -> None:
+        """Existing edit pipeline: RAG → vision plan → LLM codegen → execute."""
         self.history.append({"role": "user", "content": text})
 
         # 1. RAG context (skipped in demo mode).
@@ -372,6 +389,90 @@ class PixelPilotCLI:
 
         self.history.append({"role": "assistant", "content": "script generated"})
         self._prune_history()
+
+    # ----------------------------------------------------------- generate path
+
+    def _handle_generate(self, text: str) -> None:
+        """New generation pipeline: LLM emits ImagePlan JSON → executor → PNG.
+
+        Does not use the editor bridge or safety validator.
+        """
+        from pixelpilot.generation.executor import PlanExecutor
+        from pixelpilot.generation.planner import GenerationPlanner, PlannerError
+
+        gen_cfg = self.settings.generation
+        width = gen_cfg.default_canvas_width
+        height = gen_cfg.default_canvas_height
+
+        # 1. Ask the LLM to emit an ImagePlan JSON.
+        self.console.print("[dim]Generating image plan...[/dim]")
+        planner = GenerationPlanner(
+            client=self.client,
+            model=self.code_model,
+            temperature=self.settings.ollama.temperature,
+            think=self.settings.ollama.think,
+        )
+        try:
+            with _Heartbeat(self.console, "Planning"):
+                plan = planner.plan(text, width=width, height=height)
+        except PlannerError as exc:
+            self.console.print(f"[red]Could not generate an image plan: {exc}[/red]")
+            return
+
+        self.console.print(
+            f"[dim]Plan ready: {len(plan.objects)} object(s) on a "
+            f"{plan.canvas.width}x{plan.canvas.height} canvas.[/dim]"
+        )
+
+        # 2. Render + (optional) critique loop.
+        executor = PlanExecutor()
+        max_rounds = gen_cfg.critique_max_rounds
+
+        if max_rounds > 0 and self.vision_enabled and self.vision_model:
+            from pixelpilot.generation.backends import LocalCritiqueBackend, CloudCritiqueBackend
+            from pixelpilot.generation.critique import CritiqueLoop
+
+            if gen_cfg.critique_backend == "cloud" and gen_cfg.critique_cloud_url:
+                critique_backend = CloudCritiqueBackend(
+                    url=gen_cfg.critique_cloud_url,
+                    api_key=gen_cfg.critique_cloud_key,
+                    model=gen_cfg.critique_cloud_model,
+                )
+            else:
+                critique_backend = LocalCritiqueBackend(
+                    client=self.client,
+                    model=self.vision_model,
+                )
+
+            loop = CritiqueLoop(
+                executor=executor,
+                critique_backend=critique_backend,
+                plan_client=self.client,
+                plan_model=self.code_model,
+                max_rounds=max_rounds,
+                temperature=self.settings.ollama.temperature,
+                think=self.settings.ollama.think,
+                on_progress=lambda msg: self.console.print(f"[dim]{msg}[/dim]"),
+            )
+            with _Heartbeat(self.console, "Rendering + critiquing"):
+                final_plan, png_bytes = loop.run(plan, text)
+        else:
+            self.console.print("[dim]Rendering...[/dim]")
+            with _Heartbeat(self.console, "Rendering"):
+                png_bytes = executor.render(plan)
+            final_plan = plan
+
+        # 3. Save the PNG to the output directory.
+        out_dir = Path(gen_cfg.output_dir).resolve()
+        out_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().astimezone().strftime("%Y%m%d_%H%M%S")
+        out_path = out_dir / f"pixelpilot_gen_{ts}.png"
+        out_path.write_bytes(png_bytes)
+        self.console.print(f"[green]Generated image saved:[/green] {out_path}")
+        self.console.print(
+            f"[dim]Plan had {len(final_plan.objects)} object(s). "
+            f"Open the PNG to review.[/dim]"
+        )
 
     def _retrieve_context(self, text: str):
         if self.retriever is None:

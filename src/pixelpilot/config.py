@@ -84,6 +84,30 @@ class SessionSettings(BaseModel):
     script_output_dir: str = "~/.config/pixelpilot/scripts"
 
 
+class GenerationSettings(BaseModel):
+    """Settings for the generation (draw-from-scratch) pipeline."""
+
+    # Default canvas size when the user gives no size hint
+    default_canvas_width: int = 800
+    default_canvas_height: int = 600
+    default_background_color: list[int] = Field(default_factory=lambda: [255, 255, 255])
+
+    # Critique loop
+    critique_max_rounds: int = 2
+    """Number of render→critique→re-emit iterations (0 = disable critique)."""
+
+    critique_backend: str = "local"
+    """'local' uses the Ollama vision model; 'cloud' uses CloudCritiqueBackend."""
+
+    # Cloud critique backend (optional, never a hard dependency)
+    critique_cloud_url: str = ""
+    critique_cloud_key: str = ""
+    critique_cloud_model: str = "gpt-4o-mini"
+
+    # Output
+    output_dir: str = "outputs"
+
+
 class Settings(BaseModel):
     ollama: OllamaSettings = Field(default_factory=OllamaSettings)
     editor: EditorSettings = Field(default_factory=EditorSettings)
@@ -91,6 +115,7 @@ class Settings(BaseModel):
     feedback: FeedbackSettings = Field(default_factory=FeedbackSettings)
     rag: RAGSettings = Field(default_factory=RAGSettings)
     session: SessionSettings = Field(default_factory=SessionSettings)
+    generation: GenerationSettings = Field(default_factory=GenerationSettings)
 
 
 _ENV_PREFIX = "PIXELPILOT_"
