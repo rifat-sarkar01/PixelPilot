@@ -15,9 +15,29 @@ from __future__ import annotations
 
 import json
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+class FillType(str, Enum):
+    """How a shape's interior is filled."""
+
+    SOLID = "solid"
+    TEXTURED = "textured"
+
+
+class TextureName(str, Enum):
+    """Predefined texture presets — the LLM picks from this enum, not freeform."""
+
+    LEAF_NOISE = "leaf_noise"
+    BARK_ROUGH = "bark_rough"
+    STONE_GRAIN = "stone_grain"
+    WATER_RIPPLE = "water_ripple"
+    WOOD_GRAIN = "wood_grain"
+    SAND_FINE = "sand_fine"
+    BRICK_PATTERN = "brick_pattern"
+    METAL_BRUSH = "metal_brush"
 
 
 class ShapeType(str, Enum):
@@ -28,6 +48,81 @@ class ShapeType(str, Enum):
     ELLIPSE = "ellipse"
     POLYGON = "polygon"
     LINE = "line"
+
+
+class Anchor(str, Enum):
+    """Named anchor points for attachment positioning."""
+
+    # Universal
+    CENTER = "center"
+
+    # Rect
+    TOP_LEFT = "top_left"
+    TOP_CENTER = "top_center"
+    TOP_RIGHT = "top_right"
+    MIDDLE_LEFT = "middle_left"
+    MIDDLE_RIGHT = "middle_right"
+    BOTTOM_LEFT = "bottom_left"
+    BOTTOM_CENTER = "bottom_center"
+    BOTTOM_RIGHT = "bottom_right"
+
+    # Circle / Ellipse
+    NORTH = "north"
+    SOUTH = "south"
+    EAST = "east"
+    WEST = "west"
+
+
+# ---------------------------------------------------------------------------
+# Attachment & constraint models
+# ---------------------------------------------------------------------------
+
+class AttachTo(BaseModel):
+    """Describes how a shape is anchored relative to another shape."""
+
+    object: str = Field(..., description="ID of the shape to attach to")
+    anchor: Anchor = Field(
+        Anchor.CENTER,
+        description="Which anchor point on the target shape to attach to",
+    )
+    offset: list[float] = Field(
+        default_factory=lambda: [0.0, 0.0],
+        description="[dx, dy] offset in fractions of canvas from the anchor",
+    )
+
+
+class ConstraintType(str, Enum):
+    ASPECT_RATIO_RANGE = "aspect_ratio_range"
+    SIZE_RATIO = "size_ratio"
+    POSITION_RANGE = "position_range"
+
+
+class AspectRatioConstraint(BaseModel):
+    type: Literal[ConstraintType.ASPECT_RATIO_RANGE]
+    object: str
+    min: float = Field(0.1, gt=0)
+    max: float = Field(10.0, gt=0)
+
+
+class SizeRatioConstraint(BaseModel):
+    type: Literal[ConstraintType.SIZE_RATIO]
+    a: str = Field(..., description="ID of shape A")
+    b: str = Field(..., description="ID of shape B")
+    dimension: str = Field("width", pattern="^(width|height|radius|rx|ry)$")
+    min: float = Field(0.1, gt=0)
+    max: float = Field(10.0, gt=0)
+
+
+class PositionRangeConstraint(BaseModel):
+    type: Literal[ConstraintType.POSITION_RANGE]
+    object: str
+    x_min: float = Field(0.0, ge=0.0, le=1.0)
+    x_max: float = Field(1.0, ge=0.0, le=1.0)
+    y_min: float = Field(0.0, ge=0.0, le=1.0)
+    y_max: float = Field(1.0, ge=0.0, le=1.0)
+
+
+Constraint = AspectRatioConstraint | SizeRatioConstraint | PositionRangeConstraint
 
 
 def _validate_color(v: Any) -> list[int]:
@@ -65,6 +160,10 @@ class ShapeObject(BaseModel):
     z_order: int = Field(..., ge=1, description="Render order; 1 = furthest back")
     label: str = Field("", description="Human-readable name for debugging")
     opacity: float = Field(1.0, ge=0.0, le=1.0)
+    fill: FillType = Field(FillType.SOLID, description="Fill mode: solid or textured")
+    texture: TextureName | None = Field(
+        None, description="Texture preset name (required when fill=textured)"
+    )
 
     # rect
     x: float | None = Field(None, description="Left edge, fraction of canvas width")
@@ -94,6 +193,11 @@ class ShapeObject(BaseModel):
     x2: float | None = None
     y2: float | None = None
     stroke_width: float = Field(0.005, description="Line width, fraction of canvas width")
+
+    # attachment
+    attach_to: AttachTo | None = Field(
+        None, description="Anchor this shape to another shape's anchor point"
+    )
 
     @field_validator("color", mode="before")
     @classmethod
@@ -134,6 +238,11 @@ class ShapeObject(BaseModel):
             self.y1 = _clamp(self.y1, "y1")
             self.x2 = _clamp(self.x2, "x2")
             self.y2 = _clamp(self.y2, "y2")
+        # Validate texture
+        if self.fill == FillType.TEXTURED and self.texture is None:
+            raise ValueError(
+                f"shape '{self.id}' has fill='textured' but no texture specified"
+            )
         return self
 
 
@@ -175,6 +284,10 @@ class ImagePlan(BaseModel):
     version: str = Field("1", description="Schema version — must be '1'")
     canvas: CanvasSpec = Field(default_factory=CanvasSpec)
     objects: list[ShapeObject] = Field(default_factory=list)
+    constraints: list[Constraint] = Field(
+        default_factory=list,
+        description="Validation constraints applied during resolution",
+    )
 
     @field_validator("version")
     @classmethod

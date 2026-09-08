@@ -24,6 +24,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mode", type=str, choices=["auto", "preview", "strict", "dry-run"],
                         default=None, help="Safety confirmation mode")
     parser.add_argument("--no-vision", action="store_true", help="Disable vision feedback")
+    parser.add_argument("--no-generation", action="store_true", dest="no_generation",
+                        help="Disable the generation pipeline (generate intents use edit path)")
     parser.add_argument("--think", action="store_true", default=None,
                         help="Enable thinking/reasoning pass for hybrid models (e.g. qwen3)")
 

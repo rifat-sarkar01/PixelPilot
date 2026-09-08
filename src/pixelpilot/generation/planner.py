@@ -31,10 +31,14 @@ class PlannerError(RuntimeError):
 class GenerationPlanner:
     """Ask the Ollama model to emit an :class:`ImagePlan` JSON.
 
+    Implements the :class:`~pixelpilot.generation.backends.PlanGenerator` protocol.
+
     Usage::
 
         planner = GenerationPlanner(client, model="pixelpilot-coder")
         plan = planner.plan("draw a red car")
+        # or via protocol:
+        plan = planner.generate_plan("draw a red car")
     """
 
     def __init__(
@@ -50,6 +54,16 @@ class GenerationPlanner:
         self.max_retries = max_retries
         self.temperature = temperature
         self.think = think
+
+    def generate_plan(
+        self,
+        request: str,
+        *,
+        width: int = DEFAULT_CANVAS_WIDTH,
+        height: int = DEFAULT_CANVAS_HEIGHT,
+    ) -> ImagePlan:
+        """Protocol-compliant plan generation."""
+        return self.plan(request, width=width, height=height)
 
     def plan(
         self,

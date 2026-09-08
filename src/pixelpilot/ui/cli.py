@@ -328,11 +328,20 @@ class PixelPilotCLI:
         """Top-level dispatcher: route to edit or generate path."""
         router = IntentRouter()
         intent = router.classify(text)
-        if intent == "generate" and self.ollama_ok:
+        generation_enabled = (
+            self.settings.generation.enabled
+            and not getattr(self.args, "no_generation", False)
+        )
+        if intent == "generate" and self.ollama_ok and generation_enabled:
             self.console.print("[dim]Intent: generate (draw from scratch)[/dim]")
             self._handle_generate(text)
         else:
-            if intent == "generate" and not self.ollama_ok:
+            if intent == "generate" and not generation_enabled:
+                self.console.print(
+                    "[dim]Generation pipeline disabled — "
+                    "falling back to edit path (demo mode).[/dim]"
+                )
+            elif intent == "generate" and not self.ollama_ok:
                 self.console.print(
                     "[dim]Generate intent detected but Ollama is unreachable — "
                     "falling back to edit path (demo mode).[/dim]"
@@ -393,12 +402,13 @@ class PixelPilotCLI:
     # ----------------------------------------------------------- generate path
 
     def _handle_generate(self, text: str) -> None:
-        """New generation pipeline: LLM emits ImagePlan JSON → executor → PNG.
+        """New generation pipeline: LLM emits ImagePlan JSON → resolve → executor → texture → PNG.
 
         Does not use the editor bridge or safety validator.
         """
         from pixelpilot.generation.executor import PlanExecutor
         from pixelpilot.generation.planner import GenerationPlanner, PlannerError
+        from pixelpilot.generation.resolver import PlanResolver, ResolutionError
 
         gen_cfg = self.settings.generation
         width = gen_cfg.default_canvas_width
@@ -424,7 +434,15 @@ class PixelPilotCLI:
             f"{plan.canvas.width}x{plan.canvas.height} canvas.[/dim]"
         )
 
-        # 2. Render + (optional) critique loop.
+        # 2. Resolve attachments and constraints.
+        resolver = PlanResolver()
+        try:
+            plan = resolver.resolve(plan)
+        except ResolutionError as exc:
+            self.console.print(f"[yellow]Plan resolution warning: {exc}[/yellow]")
+            self.console.print("[dim]Proceeding with un-resolved plan.[/dim]")
+
+        # 3. Render base PNG.
         executor = PlanExecutor()
         max_rounds = gen_cfg.critique_max_rounds
 
@@ -462,7 +480,15 @@ class PixelPilotCLI:
                 png_bytes = executor.render(plan)
             final_plan = plan
 
-        # 3. Save the PNG to the output directory.
+        # 4. Apply texture pass (if any textured objects exist).
+        from pixelpilot.texture.mask_export import has_textured_objects
+        if has_textured_objects(final_plan):
+            from pixelpilot.texture.gimp_batch import apply_textures
+            self.console.print("[dim]Applying textures...[/dim]")
+            with _Heartbeat(self.console, "Texturing"):
+                png_bytes = apply_textures(png_bytes, final_plan)
+
+        # 5. Save the PNG to the output directory.
         out_dir = Path(gen_cfg.output_dir).resolve()
         out_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().astimezone().strftime("%Y%m%d_%H%M%S")

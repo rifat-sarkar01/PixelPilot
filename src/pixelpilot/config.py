@@ -87,6 +87,10 @@ class SessionSettings(BaseModel):
 class GenerationSettings(BaseModel):
     """Settings for the generation (draw-from-scratch) pipeline."""
 
+    enabled: bool = True
+    """Master toggle for the generation pipeline. When False, generate intents
+    fall back to the edit path (demo mode)."""
+
     # Default canvas size when the user gives no size hint
     default_canvas_width: int = 800
     default_canvas_height: int = 600

@@ -1,17 +1,17 @@
-"""Critique backend protocol and concrete implementations.
+"""Backend protocols and concrete implementations for generation and critique.
 
-A CritiqueBackend receives a rendered PNG and the original user request,
-and returns a CritiqueResult describing whether the image is acceptable
-and what problems were found.
+Two protocol families:
 
-Two backends are provided:
+  PlanGenerator  — emits an ImagePlan JSON from a natural language request.
+  CritiqueBackend — assesses a rendered PNG and returns feedback.
+
+Two critique backends are provided:
   LocalCritiqueBackend  — uses the local Ollama vision model (default)
   CloudCritiqueBackend  — pluggable HTTP endpoint (opt-in, never required)
 
 Usage::
 
-    backend = LocalCritiqueBackend(client, model="pixelpilot-vision")
-    result = backend.analyze(png_bytes, "draw a red car")
+    from pixelpilot.generation.backends import PlanGenerator, CritiqueBackend
 """
 
 from __future__ import annotations
@@ -22,10 +22,33 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 from pixelpilot.feedback.screenshot import to_base64
+from pixelpilot.generation.schema import ImagePlan
 from pixelpilot.ollama.client import OllamaClient
 from pixelpilot.prompts.generation import CRITIQUE_PROMPT
 
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+
+# ---------------------------------------------------------------------------
+# PlanGenerator protocol
+# ---------------------------------------------------------------------------
+
+@runtime_checkable
+class PlanGenerator(Protocol):
+    """Protocol for backends that emit ImagePlan JSON from a natural language request."""
+
+    def generate_plan(
+        self,
+        request: str,
+        *,
+        width: int = 800,
+        height: int = 600,
+    ) -> ImagePlan:
+        """Generate an :class:`ImagePlan` for *request*.
+
+        Raises on failure (caller should handle and present error to user).
+        """
+        ...
 
 
 # ---------------------------------------------------------------------------

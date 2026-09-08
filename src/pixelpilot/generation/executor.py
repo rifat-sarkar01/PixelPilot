@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import io
 
+from PIL import Image, ImageDraw
+
 from pixelpilot.generation.schema import ImagePlan, ShapeObject, ShapeType
 
 
