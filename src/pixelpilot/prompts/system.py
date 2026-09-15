@@ -83,6 +83,7 @@ class SystemPromptBuilder:
         visual_plan: str | None = None,
     ) -> list[dict]:
         system = self.build_system_prompt(
+            current_request=user_text,
             canvas_state=canvas_state,
             procedures=procedures,
             example=example,
@@ -94,6 +95,7 @@ class SystemPromptBuilder:
 
     def build_system_prompt(
         self,
+        current_request: str | None = None,
         canvas_state: dict | None = None,
         procedures: list[dict] | None = None,
         example: dict | None = None,
@@ -112,6 +114,7 @@ class SystemPromptBuilder:
             example=self.budget.fit("examples", self.format_example(example)),
             history=history_text,
             visual_plan=self.budget.fit("visual_plan", self.format_visual_plan(visual_plan)),
+            current_request=self.budget.fit("user_message", current_request or "(none)"),
         )
 
         rules = self.budget.fit("system", self.editor_rules())

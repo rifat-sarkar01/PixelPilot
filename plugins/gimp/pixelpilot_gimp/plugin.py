@@ -810,10 +810,17 @@ def _all_pdb_procedure_names(real_pdb):
     names = set()
     try:
         result = real_pdb.query(".*", ".*", ".*", ".*", ".*", ".*", ".*")
-        if result and isinstance(result[0], (list, tuple)):
-            result = result[0]
-        for raw in result:
-            names.add(str(raw).replace("-", "_"))
+        # GIMP versions return either ``(names,)`` or ``(count, names)``.
+        # Take only the nested sequence of names; treating the outer tuple as
+        # names would turn an entire list into one unusable string.
+        if isinstance(result, (list, tuple)):
+            for value in result:
+                if isinstance(value, (list, tuple)):
+                    for raw in value:
+                        if isinstance(raw, string_types):
+                            names.add(raw.replace("-", "_"))
+                elif isinstance(value, string_types):
+                    names.add(value.replace("-", "_"))
     except Exception:  # noqa: BLE001 - introspection failing must not break execution
         pass
     _PDB_NAME_CACHE["names"] = names
@@ -1018,6 +1025,11 @@ def _screenshot():
 
 def _handle(cmd):
     name = cmd.get("cmd")
+    if name == "pdb_catalog":
+        # This is data only: no generated code is evaluated.  Returning the
+        # live PDB lets the desktop validator allow every procedure supported
+        # by this installed GIMP, including plug-in-provided procedures.
+        return {"status": "ok", "result": sorted(_all_pdb_procedure_names(pdb._pdb if isinstance(pdb, _PdbAlias) else pdb))}
     if name == "execute":
         old_stdout = sys.stdout
         sys.stdout = StringIO()

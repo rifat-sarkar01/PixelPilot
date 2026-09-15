@@ -134,6 +134,15 @@ def test_unmatchable_procedure_name_fails_cleanly(plugin_module):
     assert "completely_made_up_nonexistent_call_xyz" in result["error"]
 
 
+def test_pdb_catalog_uses_all_live_procedure_names(plugin_module):
+    plugin, _real_pdb = plugin_module
+
+    result = plugin._handle({"cmd": "pdb_catalog"})
+
+    assert result["status"] == "ok"
+    assert result["result"] == sorted(name.replace("-", "_") for name in REAL_NAMES)
+
+
 def test_unrelated_real_error_is_not_swallowed_or_retried(plugin_module):
     plugin, real_pdb = plugin_module
     real_pdb._extra_failure["gimp_edit_fill"] = RuntimeError(
@@ -256,4 +265,3 @@ def test_pencil_2_and_3_args(plugin_module):
     result = plugin._handle({"cmd": "execute", "code": script})
     assert result["status"] == "ok"
     assert real_pdb.calls.count("gimp_pencil") == 2
-

@@ -26,3 +26,18 @@ def test_no_visual_plan_shows_explicit_fallback_not_raw_placeholder():
     # value isn't supplied - guard against ever regressing to that.
     assert "$visual_plan" not in system_content
     assert "no vision plan" in system_content.lower()
+
+
+def test_current_request_overrides_an_unrelated_few_shot_example():
+    builder = SystemPromptBuilder(editor="gimp")
+    example = {
+        "prompt": "desaturate a photo",
+        "code": "pdb.gimp_desaturate_full(drawable, 0)",
+    }
+
+    messages = builder.build_messages("draw a house", example=example)
+
+    system_content = messages[0]["content"]
+    assert "CURRENT USER REQUEST — AUTHORITATIVE" in system_content
+    assert "draw a house" in system_content
+    assert "Never reuse its" in system_content

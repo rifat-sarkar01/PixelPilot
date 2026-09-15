@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import re
 
+from pixelpilot.feedback.multimodal import known_image_input_rejection, rejected_image_input
 from pixelpilot.feedback.screenshot import to_base64
 from pixelpilot.ollama.client import OllamaClient
 
@@ -83,7 +84,21 @@ class VisionPlanner:
         into the code model's prompt.
         """
         if not self.enabled or not screenshot_bytes:
-            return {"success": False, "plan_text": "", "raw": ""}
+            return {
+                "success": False,
+                "plan_text": "",
+                "raw": "",
+                "image_input_rejected": False,
+            }
+
+        unsupported_reason = known_image_input_rejection(self.model)
+        if unsupported_reason:
+            return {
+                "success": False,
+                "plan_text": "",
+                "raw": unsupported_reason,
+                "image_input_rejected": True,
+            }
 
         prompt = PLAN_PROMPT.format(
             request=request, width=width or "unknown", height=height or "unknown"
@@ -108,8 +123,18 @@ class VisionPlanner:
                         {"role": "user", "content": "That was not valid JSON. Respond with JSON only."}
                     )
             except Exception as exc:  # noqa: BLE001 - never block generation on this step
-                return {"success": False, "plan_text": "", "raw": f"Vision planner error: {exc}"}
-        return {"success": False, "plan_text": "", "raw": "Could not parse vision plan response."}
+                return {
+                    "success": False,
+                    "plan_text": "",
+                    "raw": f"Vision planner error: {exc}",
+                    "image_input_rejected": rejected_image_input(exc),
+                }
+        return {
+            "success": False,
+            "plan_text": "",
+            "raw": "Could not parse vision plan response.",
+            "image_input_rejected": False,
+        }
 
     @staticmethod
     def _render(parsed: dict) -> str:

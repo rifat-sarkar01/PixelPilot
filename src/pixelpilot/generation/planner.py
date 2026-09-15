@@ -104,7 +104,10 @@ class GenerationPlanner:
                 # Ensure canvas matches requested size
                 plan.canvas.width = width
                 plan.canvas.height = height
-                return plan
+                semantic_error = self._semantic_error(request, plan)
+                if not semantic_error:
+                    return plan
+                error = semantic_error
 
             last_error = error
             # Feed the error back so the model can self-correct
@@ -156,3 +159,26 @@ class GenerationPlanner:
             return None, f"Schema validation failed: {errors}"
 
         return plan, ""
+
+    @staticmethod
+    def _semantic_error(request: str, plan: ImagePlan) -> str:
+        """Reject plans that are valid JSON but omit a requested building's anatomy."""
+        request_words = set(re.findall(r"[a-z]+", request.lower()))
+        if not request_words.intersection({"house", "home"}):
+            return ""
+
+        labels = [f"{obj.id} {obj.label}".lower() for obj in plan.objects]
+        required = {
+            "wall": any("wall" in label or "facade" in label for label in labels),
+            "roof": any("roof" in label for label in labels),
+            "door": any("door" in label for label in labels),
+            "windows": sum("window" in label for label in labels) >= 2,
+        }
+        missing = [name for name, present in required.items() if not present]
+        if missing:
+            return (
+                "House/home plan is visually incomplete; it needs labelled "
+                + ", ".join(missing)
+                + ". Re-plan it as a recognizable building, not an abstract triangle."
+            )
+        return ""

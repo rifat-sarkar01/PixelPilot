@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from pixelpilot.feedback.vision_planner import VisionPlanner
+from pixelpilot.ollama.client import OllamaAPIError
 
 
 class _FakeClient:
@@ -88,6 +89,28 @@ def test_plan_degrades_gracefully_on_model_error():
 
     assert result["success"] is False
     assert result["plan_text"] == ""
+
+
+def test_plan_marks_unsupported_image_input_for_the_cli():
+    client = _FakeClient(raise_exc=OllamaAPIError(400, "model does not support image input"))
+    planner = VisionPlanner(client, model="text-only", enabled=True)
+
+    result = planner.plan("draw a car", screenshot_bytes=b"fake-png-bytes")
+
+    assert result["success"] is False
+    assert result["image_input_rejected"] is True
+
+
+def test_known_text_only_model_is_not_sent_an_image():
+    client = _FakeClient(content=_plan_json())
+    planner = VisionPlanner(client, model="gpt-oss:20b", enabled=True)
+
+    result = planner.plan("draw a house", screenshot_bytes=b"fake-png-bytes")
+
+    assert result["success"] is False
+    assert result["image_input_rejected"] is True
+    assert "text-only" in result["raw"]
+    assert client.calls == []
 
 
 def test_plan_degrades_gracefully_on_bad_json():

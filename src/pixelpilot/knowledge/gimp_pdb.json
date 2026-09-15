@@ -811,44 +811,6 @@
       ]
     },
     {
-      "name": "gimp-ellipse-select",
-      "category": "selections",
-      "description": "Model-shorthand for gimp_image_select_ellipse. Supported at runtime by an alias in the bridge plugin.",
-      "signature": "pdb.gimp_ellipse_select(image, operation, x, y, width, height)",
-      "params": [
-        {
-          "name": "operation",
-          "type": "enum",
-          "example": "CHANNEL_OP_REPLACE"
-        },
-        {
-          "name": "x",
-          "type": "int"
-        },
-        {
-          "name": "y",
-          "type": "int"
-        },
-        {
-          "name": "width",
-          "type": "int"
-        },
-        {
-          "name": "height",
-          "type": "int"
-        }
-      ],
-      "returns": "none",
-      "example": "pdb.gimp_ellipse_select(image, CHANNEL_OP_REPLACE, 100, 100, 600, 400)",
-      "version_compat": [
-        "2.10"
-      ],
-      "pitfalls": [
-        "Prefer the canonical pdb.gimp_image_select_ellipse(image, operation, x, y, width, height) form.",
-        "Do NOT use a GIMP-3 style gimp_ellipse_select(canvas_w, canvas_h, w, h, cx, cy, antialias, from_center) call and do not pass FROM_CENTER."
-      ]
-    },
-    {
       "name": "gimp-image-select-rectangle",
       "legacy_name": "gimp-selection-rectangle",
       "category": "selections",

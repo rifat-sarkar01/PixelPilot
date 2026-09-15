@@ -20,15 +20,59 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+class SurfacePreset(str, Enum):
+    """Surface texture presets — applied per-object masked to its silhouette.
+
+    The LLM picks from this enum; the technique executor translates to GIMP ops.
+    """
+
+    LEAF_NOISE = "leaf_noise"
+    BARK_ROUGH = "bark_rough"
+    STONE_GRAIN = "stone_grain"
+    WOOD_GRAIN = "wood_grain"
+    WATER_RIPPLE = "water_ripple"
+    SAND_FINE = "sand_fine"
+    METAL_BRUSH = "metal_brush"
+    BRICK_PATTERN = "brick_pattern"
+
+
+class ShadingPreset(str, Enum):
+    """Shading / lighting presets — applied after surface, masked per-object."""
+
+    SOFT_BEVEL = "soft_bevel"
+    DROP_SHADOW = "drop_shadow"
+    INNER_GLOW = "inner_glow"
+
+
+class OutlinePreset(str, Enum):
+    """Outline / stroke presets — applied last, masked per-object."""
+
+    THIN_DARK = "thin_dark"
+    THICK_DARK = "thick_dark"
+    WHITE_GLOW = "white_glow"
+
+
+class GlobalPostPreset(str, Enum):
+    """Whole-canvas post-processing presets (optional, applied after all objects)."""
+
+    VIGNETTE = "vignette"
+    FILM_GRAIN = "film_grain"
+    COLOR_GRADE_WARM = "color_grade_warm"
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatibility aliases (deprecated — use the new enums above)
+# ---------------------------------------------------------------------------
+
 class FillType(str, Enum):
-    """How a shape's interior is filled."""
+    """Deprecated: use surface/shading/outline fields instead."""
 
     SOLID = "solid"
     TEXTURED = "textured"
 
 
 class TextureName(str, Enum):
-    """Predefined texture presets — the LLM picks from this enum, not freeform."""
+    """Deprecated: use SurfacePreset instead."""
 
     LEAF_NOISE = "leaf_noise"
     BARK_ROUGH = "bark_rough"
@@ -160,9 +204,26 @@ class ShapeObject(BaseModel):
     z_order: int = Field(..., ge=1, description="Render order; 1 = furthest back")
     label: str = Field("", description="Human-readable name for debugging")
     opacity: float = Field(1.0, ge=0.0, le=1.0)
-    fill: FillType = Field(FillType.SOLID, description="Fill mode: solid or textured")
+    # Enhancement fields — each is null (skip) or a preset name from a fixed enum.
+    # Applied by the technique executor in fixed order: surface → shading → outline.
+    # The LLM is shown only these enum values; it never authors raw operations.
+    surface: SurfacePreset | None = Field(
+        None,
+        description="Surface texture preset applied masked to this object's silhouette",
+    )
+    shading: ShadingPreset | None = Field(
+        None,
+        description="Shading/lighting preset applied after surface pass",
+    )
+    outline: OutlinePreset | None = Field(
+        None,
+        description="Outline/stroke preset applied last, masked to silhouette",
+    )
+
+    # Deprecated fields kept for backward compatibility with existing tests.
+    fill: FillType = Field(FillType.SOLID, description="Deprecated: use surface field")
     texture: TextureName | None = Field(
-        None, description="Texture preset name (required when fill=textured)"
+        None, description="Deprecated: use surface field"
     )
 
     # rect
@@ -238,11 +299,6 @@ class ShapeObject(BaseModel):
             self.y1 = _clamp(self.y1, "y1")
             self.x2 = _clamp(self.x2, "x2")
             self.y2 = _clamp(self.y2, "y2")
-        # Validate texture
-        if self.fill == FillType.TEXTURED and self.texture is None:
-            raise ValueError(
-                f"shape '{self.id}' has fill='textured' but no texture specified"
-            )
         return self
 
 
@@ -287,6 +343,10 @@ class ImagePlan(BaseModel):
     constraints: list[Constraint] = Field(
         default_factory=list,
         description="Validation constraints applied during resolution",
+    )
+    global_post: list[GlobalPostPreset] = Field(
+        default_factory=list,
+        description="Optional whole-canvas post-processing presets applied after all objects",
     )
 
     @field_validator("version")

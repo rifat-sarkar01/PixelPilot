@@ -21,3 +21,16 @@ class GimpBridge(SocketEditorBridge):
                 f"Could not connect to GIMP plugin at {self.host}:{self.port}. "
                 "Is GIMP running with the PixelPilot plugin enabled?"
             ) from exc
+
+    def get_pdb_catalog(self) -> set[str]:
+        """Return procedure names registered by this exact GIMP instance.
+
+        GIMP's PDB differs across versions and plug-in installations, so the
+        running editor is the authoritative source for API validation.
+        """
+        procedures = self._rpc("pdb_catalog")
+        if not isinstance(procedures, list) or not all(
+            isinstance(name, str) for name in procedures
+        ):
+            raise BridgeConnectionError("GIMP returned an invalid PDB catalog.")
+        return set(procedures)

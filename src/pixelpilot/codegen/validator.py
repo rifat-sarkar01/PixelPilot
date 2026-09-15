@@ -92,9 +92,10 @@ FORBIDDEN_RAW_PATTERNS = [
     re.compile(r"https?://"),
     re.compile(r"\bopen\s*\("),
     # Python 3.6+ f-strings are forbidden in GIMP Python-Fu (Python 2.7).
-    # Matches f"...", f'...', F"...", F'...' but NOT b"..." or u"...".
-    re.compile(r"""(?:^|[^bBuU])f(['"])""", re.MULTILINE),
-    re.compile(r"""(?:^|[^bBuU])F(['"])""", re.MULTILINE),
+    # The prefix must begin a string token.  The previous pattern treated any
+    # prose ending in ``f`` (for example ``background of "the car"``) as an
+    # f-string, causing otherwise valid scripts to be rejected.
+    re.compile(r"(?<![A-Za-z0-9_])(?:[fF][rR]?|[rR][fF])(?:['\"]|\"\"\"|''')"),
 ]
 
 FENCED_CODE_RE = re.compile(
@@ -165,7 +166,10 @@ class SafetyValidator:
         self.editor = editor
         self.max_script_lines = max_script_lines
         self.check_api = check_api
-        self.api_catalog = api_catalog or known_api_names(editor)
+        # The bundled catalog covers the generated helpers and common APIs.
+        # When a connected GIMP supplies its PDB, merge it rather than replacing
+        # these entries: the bridge helpers are also executable API surface.
+        self.api_catalog = known_api_names(editor) | set(api_catalog or ())
 
     # ------------------------------------------------------------------ public
 
@@ -299,9 +303,15 @@ class SafetyValidator:
             if not self._api_call_known(call, known):
                 unknown.append(call)
         for call in unknown:
-            report.warnings.append(
-                f"Unknown API call (possible hallucination): {call}()"
-            )
+            message = f"Unknown API call (possible hallucination): {call}()"
+            # A made-up call on the live editor API is not merely advisory:
+            # executing it can leave a partially drawn canvas behind.  Keep
+            # warnings for other unfamiliar callables, but block PDB/GIMP
+            # calls until the model uses a known procedure.
+            if call.startswith(("pdb.", "gimp.")):
+                report.errors.append(message)
+            else:
+                report.warnings.append(message)
         report.unknown_api_calls = unknown
 
     @classmethod

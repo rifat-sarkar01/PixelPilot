@@ -1,0 +1,211 @@
+# PixelPilot Technique Registry
+# --------------------------------
+# Maps preset names to ordered lists of GIMP PDB operations.
+# The LLM only picks a name from these fixed enums — it never authors operations.
+#
+# Each operation has:
+#   op: GIMP PDB procedure name (or a PixelPilot pseudo-op: select-grow-subtract)
+#   params: key/value pairs passed to the procedure
+#
+# Fixed application order enforced by executor: surface → shading → outline
+# A backend field (gimp|krita) can be added per recipe when Krita filters are
+# needed — currently all recipes target GIMP.
+
+surface:
+  leaf_noise:
+    description: "Organic noise pattern for foliage"
+    ops:
+      - op: plug-in-hsv-noise
+        params:
+          holdness: 2
+          hue: 10
+          saturation: 20
+          value: 15
+
+  bark_rough:
+    description: "Rough vertical grain for tree bark"
+    ops:
+      - op: plug-in-plasma
+        params:
+          seed: 0
+          turbulence: 3.0
+      - op: gimp-curves-spline
+        params:
+          channel: HISTOGRAM-VALUE
+          control_pts: [0, 40, 128, 90, 255, 160]
+
+  stone_grain:
+    description: "Subtle grain for stone or concrete"
+    ops:
+      - op: plug-in-plasma
+        params:
+          seed: 0
+          turbulence: 1.5
+
+  wood_grain:
+    description: "Horizontal grain for wooden surfaces"
+    ops:
+      - op: plug-in-hsv-noise
+        params:
+          holdness: 2
+          hue: 8
+          saturation: 12
+          value: 25
+      - op: plug-in-mblur
+        params:
+          type: 0
+          length: 8
+          angle: 90
+
+  water_ripple:
+    description: "Ripple pattern for water surfaces"
+    ops:
+      - op: plug-in-ripple
+        params:
+          period: 12
+          amplitude: 3
+          phase_shift: 0
+          angle: 0
+          wave_type: 0
+          reflect: 0
+          edges: 0
+
+  sand_fine:
+    description: "Fine granular texture for sand"
+    ops:
+      - op: plug-in-hsv-noise
+        params:
+          holdness: 1
+          hue: 5
+          saturation: 8
+          value: 20
+
+  metal_brush:
+    description: "Brushed metal finish with horizontal strokes"
+    ops:
+      - op: plug-in-hsv-noise
+        params:
+          holdness: 1
+          hue: 2
+          saturation: 5
+          value: 18
+      - op: plug-in-mblur
+        params:
+          type: 0
+          length: 12
+          angle: 0
+
+  brick_pattern:
+    description: "Repeating brick pattern overlay"
+    ops:
+      - op: plug-in-hsv-noise
+        params:
+          holdness: 3
+          hue: 15
+          saturation: 25
+          value: 30
+
+shading:
+  soft_bevel:
+    description: "Soft bevel gives a 3D rounded edge appearance"
+    ops:
+      - op: plug-in-bump-map
+        params:
+          type: 0
+          azimuth: 135
+          elevation: 45
+          depth: 3
+          xofs: 0
+          yofs: 0
+          waterlevel: 0
+          ambient: 0
+          compensate: 1
+          tiled: 0
+          invert: 0
+
+  drop_shadow:
+    description: "Drop shadow beneath the object"
+    ops:
+      - op: script-fu-drop-shadow
+        params:
+          offset_x: 6
+          offset_y: 6
+          blur_radius: 8
+          color: [0, 0, 0]
+          opacity: 60
+
+  inner_glow:
+    description: "Soft inner glow from center"
+    ops:
+      - op: plug-in-bump-map
+        params:
+          type: 0
+          azimuth: 270
+          elevation: 60
+          depth: 2
+          xofs: 0
+          yofs: 0
+          waterlevel: 128
+          ambient: 64
+          compensate: 1
+          tiled: 0
+          invert: 1
+
+outline:
+  thin_dark:
+    description: "1px dark outline around the object silhouette"
+    ops:
+      - op: select-grow-subtract
+        params:
+          width: 2
+          color: [0, 0, 0]
+          opacity: 128
+
+  thick_dark:
+    description: "3px bold dark outline"
+    ops:
+      - op: select-grow-subtract
+        params:
+          width: 4
+          color: [0, 0, 0]
+          opacity: 200
+
+  white_glow:
+    description: "Soft white outline giving a glow effect"
+    ops:
+      - op: select-grow-subtract
+        params:
+          width: 3
+          color: [255, 255, 255]
+          opacity: 160
+
+global_post:
+  vignette:
+    description: "Darken edges of the canvas for cinematic look"
+    ops:
+      - op: pixelpilot-vignette
+        params:
+          strength: 0.4
+          radius: 0.7
+
+  film_grain:
+    description: "Light film grain over the whole canvas"
+    ops:
+      - op: plug-in-hsv-noise
+        params:
+          holdness: 1
+          hue: 0
+          saturation: 0
+          value: 12
+
+  color_grade_warm:
+    description: "Warm color grade: lift shadows toward orange"
+    ops:
+      - op: gimp-curves-spline
+        params:
+          channel: HISTOGRAM-RED
+          control_pts: [0, 20, 128, 140, 255, 255]
+      - op: gimp-curves-spline
+        params:
+          channel: HISTOGRAM-BLUE
+          control_pts: [0, 0, 128, 115, 255, 235]

@@ -91,11 +91,21 @@ def test_syntax_error_fails():
     assert any("Syntax" in e for e in report.errors)
 
 
-def test_unknown_api_warning():
+def test_unknown_pdb_api_call_blocks_execution():
     script = "pdb.gimp_fake_hallucinated_procedure(image)\n"
     report = SafetyValidator(editor="gimp").validate(script)
-    assert report.passed  # warnings only
+    assert not report.passed
+    assert any("Unknown API call" in error for error in report.errors)
     assert any("gimp_fake_hallucinated_procedure" in c for c in report.unknown_api_calls)
+
+
+def test_noncanonical_ellipse_select_is_reported_as_a_possible_hallucination():
+    """Only ``gimp_image_select_ellipse`` is a canonical GIMP Python-Fu call."""
+    report = SafetyValidator(editor="gimp").validate(
+        "pdb.gimp_ellipse_select(image, CHANNEL_OP_REPLACE, 10, 10, 20, 20)\n"
+    )
+
+    assert "pdb.gimp_ellipse_select" in report.unknown_api_calls
 
 
 def test_krita_known_api_accepted():
@@ -149,8 +159,18 @@ def test_stdlib_calls_from_allowed_modules_are_not_flagged_as_hallucinations():
 def test_genuinely_unknown_pdb_call_is_still_flagged():
     script = "pdb.gimp_totally_made_up_call(1, 2, 3)\n"
     report = SafetyValidator(editor="gimp").validate(script)
-    assert any("gimp_totally_made_up_call" in w for w in report.warnings)
+    assert any("gimp_totally_made_up_call" in e for e in report.errors)
     assert any("gimp_totally_made_up_call" in c for c in report.unknown_api_calls)
+
+
+def test_live_pdb_catalog_allows_version_or_plugin_specific_procedure():
+    procedure = "gimp_local_extension_procedure"
+    report = SafetyValidator(
+        editor="gimp", api_catalog={procedure}
+    ).validate(f"pdb.{procedure}(image)\n")
+
+    assert report.passed, report.errors
+    assert report.unknown_api_calls == []
 
 
 def test_locally_defined_functions_not_flagged():
@@ -194,6 +214,36 @@ def test_fstring_uppercase_F_fails():
     assert not report.passed
 
 
+def test_comment_ending_in_f_does_not_look_like_an_fstring():
+    script = '# Remove the background of "the car".\nprint("ok")\n'
+    report = SafetyValidator(editor="gimp").validate(script)
+    assert report.passed, report.errors
+
+
+def test_valid_gimp_background_mask_procedures_are_accepted():
+    script = '''from gimpfu import *
+image = gimp.image_list()[0]
+drawable = image.active_drawable
+pdb.gimp_layer_add_alpha(drawable)
+mask = pdb.gimp_layer_create_mask(drawable, ADD_WHITE_MASK)
+pdb.gimp_layer_add_mask(drawable, mask)
+pdb.gimp_fuzzy_select(drawable, 0, 0, 30, CHANNEL_OP_REPLACE, True, False, 0, False)
+pdb.gimp_edit_clear(drawable)
+pdb.gimp_selection_none(image)
+'''
+    report = SafetyValidator(editor="gimp").validate(script)
+    assert report.passed, report.errors
+    assert report.unknown_api_calls == []
+
+
+def test_nonexistent_gimp_image_get_pixel_still_blocks_execution():
+    report = SafetyValidator(editor="gimp").validate(
+        "pdb.gimp_image_get_pixel(image, 0, 0)\n"
+    )
+    assert not report.passed
+    assert "pdb.gimp_image_get_pixel" in report.unknown_api_calls
+
+
 def test_percent_formatting_passes():
     script = "name = 'test'\nmsg = 'Layer %s created' % name\n"
     report = SafetyValidator(editor="gimp").validate(script)
@@ -209,4 +259,3 @@ def test_gimp_message_not_flagged_as_hallucination():
 
 class SafetyReportStub:
     passed = True
-

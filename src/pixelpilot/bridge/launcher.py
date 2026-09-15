@@ -117,6 +117,19 @@ def _candidate_dirs() -> list[Path]:
             if base.is_dir():
                 # Also try any "GIMP*" folder (version-numbered installs).
                 dirs.extend(p / "bin" for p in base.glob("GIMP*") if p.is_dir())
+        # Also check common non-Program-Files locations on Windows (D:\, C:\, etc.)
+        for drive in ["C:", "D:", "E:"]:
+            drive_root = Path(f"{drive}\\")
+            if drive_root.is_dir():
+                # Direct: D:\GIMP 2\bin
+                gimp2 = drive_root / "GIMP 2" / "bin"
+                if gimp2.is_dir():
+                    dirs.append(gimp2)
+                # Versioned: D:\GIMP 2.10\bin, D:\GIMP 3\bin, etc.
+                if drive_root.is_dir():
+                    for p in drive_root.glob("GIMP*"):
+                        if p.is_dir() and (p / "bin").is_dir():
+                            dirs.append(p / "bin")
         return dirs
     if sys.platform == "darwin":
         return [

@@ -26,28 +26,10 @@ class GIMPNotAvailable(RuntimeError):
     """Raised when GIMP cannot be found on the system."""
 
 
-def find_gimp_binary() -> str | None:
+def find_gimp_binary(configured_path: str | None = None) -> str | None:
     """Locate the GIMP executable. Returns None if not found."""
-    # Common GIMP binary names
-    candidates = ["gimp", "gimp-2.10", "gimp-3.0", "gimp.exe"]
-
-    # Check PATH
-    for name in candidates:
-        path = shutil.which(name)
-        if path is not None:
-            return path
-
-    # Windows: common install locations
-    if __import__("sys").platform == "win32":
-        for prog in [
-            r"C:\Program Files\GIMP 3\bin\gimp-3.0.exe",
-            r"C:\Program Files\GIMP 2\bin\gimp-2.10.exe",
-            r"C:\Program Files (x86)\GIMP 2\bin\gimp-2.10.exe",
-        ]:
-            if Path(prog).exists():
-                return prog
-
-    return None
+    from pixelpilot.bridge.launcher import find_gimp_binary as _launcher_find
+    return _launcher_find(configured_path)
 
 
 def apply_textures(

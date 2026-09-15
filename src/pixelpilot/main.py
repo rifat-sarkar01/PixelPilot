@@ -31,7 +31,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command")
 
-    sub.add_parser("setup", help="Install custom Modelfiles into Ollama (pulls base models)")
+    sub.add_parser("setup", help="Install custom Modelfiles into Ollama (uses installed base models)")
     sub.add_parser("init-knowledge", help="Build the local RAG index over the bundled knowledge base")
     sub.add_parser("models", help="List installed Ollama models and recommended selection")
     return parser

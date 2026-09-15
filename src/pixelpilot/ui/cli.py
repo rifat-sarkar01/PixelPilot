@@ -49,6 +49,7 @@ COMMANDS = {
     "/undo": "Undo the last operation in the editor",
     "/status": "Show connection and model status",
     "/connect": "(Re)connect to the editor, launching it if needed",
+    "/open PATH": "Open an image as the working file for prompt edits",
 }
 
 _HELP_TEXT = "\n".join(f"  {cmd:<12} {desc}" for cmd, desc in COMMANDS.items())
@@ -94,16 +95,27 @@ class PixelPilotCLI:
 
         self.code_model = args.model or settings.ollama.code_model
         self.vision_model = getattr(args, "vision_model", None) or settings.ollama.vision_model
+        self._vision_disabled_reason: str | None = None
+        from pixelpilot.feedback.multimodal import known_image_input_rejection
+
+        known_unsupported_reason = known_image_input_rejection(self.vision_model)
+        if self.vision_enabled and known_unsupported_reason:
+            # Do this before any image request, including the generation
+            # critique loop, so a text-only model never receives a screenshot.
+            self.vision_enabled = False
+            self._vision_disabled_reason = known_unsupported_reason
         if getattr(args, "think", None) is not None:
             settings.ollama.think = args.think
         self.client = OllamaClient(settings.ollama.base_url)
         self.ollama_ok = self.client.ping()
         self.bridge = self._create_bridge()
         self.bridge_ok = False
+        self._live_gimp_pdb: set[str] | None = None
         self.tracker = CanvasStateTracker()
         self.history: list[dict[str, str]] = []
         self.retriever: Retriever | None = None
         self._vision_recovery_rounds = 0
+        self._working_image_path: Path | None = None
 
     # ------------------------------------------------------------------ setup
 
@@ -135,6 +147,13 @@ class PixelPilotCLI:
         try:
             self.bridge.connect()
             self.bridge_ok = True
+            if self.editor == "gimp":
+                try:
+                    self._live_gimp_pdb = self.bridge.get_pdb_catalog()
+                except (BridgeConnectionError, BridgeExecutionError):
+                    # Older bridge plug-ins do not expose the catalog.  The
+                    # bundled catalog remains a safe compatibility fallback.
+                    self._live_gimp_pdb = None
             state = self.bridge.get_canvas_state()
             self.tracker.update(state)
             return True
@@ -145,6 +164,11 @@ class PixelPilotCLI:
             # Bridge is reachable but has no canvas yet (e.g. no open images).
             self.bridge_ok = True
             return True
+
+    def _safety_validator(self) -> SafetyValidator:
+        """Build a validator using the connected GIMP's complete live PDB."""
+        catalog = self._live_gimp_pdb if self.editor == "gimp" else None
+        return SafetyValidator(editor=self.editor, api_catalog=catalog)
 
     def _auto_launch_gimp(self, backend) -> None:
         self.console.print(
@@ -274,9 +298,29 @@ class PixelPilotCLI:
         elif text == "/connect":
             self._try_connect_bridge()
             self._print_status()
+        elif text.startswith("/open "):
+            self._open_working_image(text[6:].strip())
         else:
             return False
         return True
+
+    def _open_working_image(self, raw_path: str) -> None:
+        """Choose an image file for the next GIMP prompt edit."""
+        path = Path(raw_path.strip('"')).expanduser().resolve()
+        if not path.is_file():
+            self.console.print(f"[yellow]Image not found: {path}[/yellow]")
+            return
+        self._working_image_path = path
+        if self.editor != "gimp":
+            self.console.print(f"[green]Working image set: {path}[/green]")
+            return
+        try:
+            from pixelpilot.bridge.gimp_batch import open_in_gimp
+
+            open_in_gimp(path, gimp_binary=self.settings.editor.gimp.binary_path)
+            self.console.print("[green]Opened in GIMP — ready for an edit prompt.[/green]")
+        except Exception as exc:  # noqa: BLE001 - report the editor launch failure
+            self.console.print(f"[yellow]Working image set, but GIMP could not open it: {exc}[/yellow]")
 
     def _bridge_undo(self) -> None:
         if not self.bridge_ok:
@@ -307,6 +351,8 @@ class PixelPilotCLI:
         table.add_row("Bridge address", f"{backend.host}:{backend.port}")
         table.add_row("Safety mode", self.mode)
         self.console.print(Panel(table, title="Status", border_style="blue"))
+        if self._vision_disabled_reason:
+            self.console.print(f"[yellow]{self._vision_disabled_reason}[/yellow]")
         if not self.bridge_ok:
             if editor == "krita":
                 ok, msg = verify_krita_plugin()
@@ -346,9 +392,12 @@ class PixelPilotCLI:
                     "[dim]Generate intent detected but Ollama is unreachable — "
                     "falling back to edit path (demo mode).[/dim]"
                 )
-            self._handle_edit(text)
+            # A from-scratch request can intentionally use the edit pipeline
+            # when generation is disabled. Keep it isolated from prior edits
+            # and unrelated few-shot examples so it cannot inherit their task.
+            self._handle_edit(text, isolate_generation_request=(intent == "generate"))
 
-    def _handle_edit(self, text: str) -> None:
+    def _handle_edit(self, text: str, *, isolate_generation_request: bool = False) -> None:
         """Existing edit pipeline: RAG → vision plan → LLM codegen → execute."""
         self.history.append({"role": "user", "content": text})
 
@@ -360,6 +409,10 @@ class PixelPilotCLI:
                 procedures, example = self._retrieve_context(text)
             except Exception as exc:  # noqa: BLE001
                 self.console.print(f"[dim]RAG retrieval skipped: {exc}[/dim]")
+        if isolate_generation_request:
+            # Procedures remain useful, but a sample for an unrelated photo
+            # edit is a poor reference for a from-scratch drawing request.
+            example = None
 
         # 2. Vision-first plan: the vision model looks at the ACTUAL current
         # canvas and turns the request into a concrete spec (sizes, positions,
@@ -374,7 +427,10 @@ class PixelPilotCLI:
         # 3. Generate the script.
         if self.ollama_ok:
             self.console.print("[dim]Generating script...[/dim]")
-            script = self._generate_script(text, procedures, example, visual_plan=visual_plan)
+            history = [] if isolate_generation_request else None
+            script = self._generate_script(
+                text, procedures, example, visual_plan=visual_plan, history=history
+            )
         else:
             script = self._demo_generate(text)
 
@@ -383,7 +439,7 @@ class PixelPilotCLI:
             return
 
         # 3. Validate.
-        validator = SafetyValidator(editor=self.editor)
+        validator = self._safety_validator()
         report = validator.validate(script)
         self._show_script(script, report)
 
@@ -480,13 +536,20 @@ class PixelPilotCLI:
                 png_bytes = executor.render(plan)
             final_plan = plan
 
-        # 4. Apply texture pass (if any textured objects exist).
-        from pixelpilot.texture.mask_export import has_textured_objects
-        if has_textured_objects(final_plan):
-            from pixelpilot.texture.gimp_batch import apply_textures
-            self.console.print("[dim]Applying textures...[/dim]")
-            with _Heartbeat(self.console, "Texturing"):
-                png_bytes = apply_textures(png_bytes, final_plan)
+        # 4. Technique pass — apply surface/shading/outline/global_post recipes.
+        # Single batched GIMP invocation; gracefully skipped if GIMP is absent
+        # or no enhancement fields are set on any object.
+        from pixelpilot.technique.executor import TechniqueExecutor
+        from pixelpilot.technique.mask_export import needs_technique_pass
+
+        if needs_technique_pass(final_plan) or final_plan.global_post:
+            gimp_cfg = self.settings.editor.gimp
+            tech_executor = TechniqueExecutor(
+                gimp_binary=gimp_cfg.binary_path,
+                on_progress=lambda msg: self.console.print(f"[dim]{msg}[/dim]"),
+            )
+            with _Heartbeat(self.console, "Applying techniques"):
+                png_bytes = tech_executor.apply(png_bytes, final_plan)
 
         # 5. Save the PNG to the output directory.
         out_dir = Path(gen_cfg.output_dir).resolve()
@@ -495,10 +558,73 @@ class PixelPilotCLI:
         out_path = out_dir / f"pixelpilot_gen_{ts}.png"
         out_path.write_bytes(png_bytes)
         self.console.print(f"[green]Generated image saved:[/green] {out_path}")
-        self.console.print(
-            f"[dim]Plan had {len(final_plan.objects)} object(s). "
-            f"Open the PNG to review.[/dim]"
-        )
+
+        # 6. Put the generated result into the selected editor.  Generation is
+        # intentionally a local renderer; loading the result here turns it
+        # into the editable document for the user's next prompt.
+        self._open_generated_image(out_path, len(final_plan.objects))
+
+    def _open_generated_image(self, out_path: Path, object_count: int) -> None:
+        """Open a generated PNG in the connected editor, with actionable errors."""
+        self._working_image_path = out_path
+        if self.editor == "gimp":
+            # The socket bridge is a headless GIMP process, not the user's
+            # visible editor.  Launch the normal GIMP UI with this file; later
+            # prompt edits use the reliable file-based Python-Fu runner.
+            try:
+                from pixelpilot.bridge.gimp_batch import open_in_gimp
+
+                open_in_gimp(out_path, gimp_binary=self.settings.editor.gimp.binary_path)
+                self.console.print("[green]Opened in GIMP — ready for your next edit prompt.[/green]")
+            except Exception as exc:  # noqa: BLE001 - saved output remains usable
+                self.console.print(
+                    f"[yellow]Saved the {object_count}-object image, but GIMP could not open it: {exc}. "
+                    "Use /open with the saved path after starting GIMP.[/yellow]"
+                )
+            return
+
+        if not self.bridge_ok:
+            # Generation used to skip this retry, so a GIMP bridge that became
+            # available while planning/rendering was never used for the result.
+            self._try_connect_bridge()
+
+        if not self.bridge_ok:
+            self.console.print(
+                f"[yellow]Saved the {object_count}-object image, but {self.editor.title()} is not "
+                "connected. Run /connect, then open the saved PNG to continue editing it.[/yellow]"
+            )
+            return
+
+        try:
+            if self.editor == "gimp":
+                # repr() produces a safe Python string literal for paths with
+                # spaces, apostrophes, and Windows separators.
+                path = str(out_path).replace("\\", "/")
+                self.bridge.execute_script(
+                    "from gimpfu import *\n"
+                    f"image = pdb.gimp_file_load(RUN_NONINTERACTIVE, {path!r}, {path!r})\n"
+                    "pdb.gimp_display_new(image)\n"
+                    "pdb.gimp_displays_flush()\n"
+                )
+            else:
+                path = str(out_path)
+                self.bridge.execute_script(
+                    f"document = Krita.instance().openDocument({path!r})\n"
+                    "Krita.instance().activeWindow().addView(document)\n"
+                )
+            self.console.print(f"[green]Opened in {self.editor.title()} — ready for your next edit prompt.[/green]")
+        except BridgeConnectionError as exc:
+            self.bridge.disconnect()
+            self.bridge_ok = False
+            self.console.print(
+                f"[yellow]Saved the image, but the {self.editor.title()} bridge disconnected: {exc}. "
+                "Run /connect and try again.[/yellow]"
+            )
+        except BridgeExecutionError as exc:
+            self.console.print(
+                f"[yellow]Saved the image, but {self.editor.title()} rejected the open request: {exc}. "
+                "The bridge is running; open the PNG manually, then send an edit prompt.[/yellow]"
+            )
 
     def _retrieve_context(self, text: str):
         if self.retriever is None:
@@ -530,6 +656,8 @@ class PixelPilotCLI:
         self.console.print("[dim]Vision model is planning the scene...[/dim]")
         result = planner.plan(text, screenshot, width=width, height=height)
         if not result.get("success"):
+            if result.get("image_input_rejected"):
+                self._disable_vision_for_session()
             reason = result.get("raw") or "no usable plan returned"
             self.console.print(f"[dim]Vision planning skipped ({reason}) - generating directly.[/dim]")
             return None
@@ -547,6 +675,7 @@ class PixelPilotCLI:
         procedures: list[dict],
         example: dict | None,
         visual_plan: str | None = None,
+        history: list[dict[str, str]] | None = None,
     ) -> str | None:
         from pixelpilot.prompts.system import SystemPromptBuilder
 
@@ -558,7 +687,11 @@ class PixelPilotCLI:
             canvas_state=self.tracker.state.to_dict() if not self.tracker.state.is_empty() else None,
             procedures=procedures,
             example=example,
-            history=self.history[-self.settings.session.max_history_turns * 2 :],
+            history=(
+                history
+                if history is not None
+                else self.history[-self.settings.session.max_history_turns * 2 :]
+            ),
             visual_plan=visual_plan,
         )
         for attempt in range(3):
@@ -660,6 +793,9 @@ class PixelPilotCLI:
     # -------------------------------------------------------------- execution
 
     def _execute(self, script: str) -> None:
+        if self.editor == "gimp" and self._working_image_path is not None:
+            self._execute_gimp_file_edit(script)
+            return
         if not self.bridge_ok:
             # The editor may have finished starting (or been opened manually)
             # since the last attempt - try a cheap reconnect before giving up.
@@ -679,6 +815,30 @@ class PixelPilotCLI:
             self.console.print(f"[red]Execution failed: {exc}[/red]")
             self._error_recovery(script, str(exc))
             return
+
+    def _execute_gimp_file_edit(self, script: str) -> None:
+        """Apply a validated prompt edit to the current GIMP working image."""
+        from pixelpilot.bridge.gimp_batch import GimpBatchError, apply_python_edit, open_in_gimp
+
+        source = self._working_image_path
+        assert source is not None
+        out_dir = Path(self.settings.generation.output_dir).resolve()
+        ts = datetime.now().astimezone().strftime("%Y%m%d_%H%M%S")
+        output = out_dir / f"pixelpilot_edit_{ts}.png"
+        self.console.print("[dim]Applying edit in GIMP...[/dim]")
+        try:
+            with _Heartbeat(self.console, "Applying edit"):
+                result = apply_python_edit(
+                    source,
+                    output,
+                    script,
+                    gimp_binary=self.settings.editor.gimp.binary_path,
+                )
+            self._working_image_path = result
+            open_in_gimp(result, gimp_binary=self.settings.editor.gimp.binary_path)
+            self.console.print(f"[green]Edited image opened in GIMP:[/green] {result}")
+        except GimpBatchError as exc:
+            self.console.print(f"[red]GIMP edit failed: {exc}[/red]")
 
         # Post-execution steps are best-effort: a dropped bridge connection
         # (common if Krita reloads a doc) must not crash the entire session.
@@ -729,12 +889,31 @@ class PixelPilotCLI:
         if result.get("success"):
             self.console.print("[green]Vision: the result looks correct.[/green]")
             return
+        if result.get("image_input_rejected"):
+            self._disable_vision_for_session()
+            return
         assessment = result.get("assessment", "")
         fixes = result.get("fixes", [])
         self.console.print(f"[yellow]Vision assessment:[/yellow] {assessment}")
         for fix in fixes:
             self.console.print(f"  - {fix}")
         self._vision_recovery(script, assessment, fixes)
+
+    def _disable_vision_for_session(self) -> None:
+        """Stop sending screenshots after Ollama rejects image input.
+
+        The configured model can still answer text chat, but it did not see
+        this screenshot. Disabling vision prevents repeated 400s and ensures a
+        capability error can never trigger a code rewrite.
+        """
+        self.vision_enabled = False
+        self._vision_disabled_reason = (
+            f"{self.vision_model} rejected image input; choose a separate vision model."
+        )
+        self.console.print(
+            "[yellow]Vision model cannot accept image input; "
+            "vision is disabled for this session.[/yellow]"
+        )
 
     def _vision_recovery(self, script: str, assessment: str, fixes: list[str]) -> None:
         """Ask the code model to rewrite the script when the vision model reports
@@ -749,6 +928,7 @@ class PixelPilotCLI:
         from pixelpilot.codegen.validator import SafetyValidator, extract_code_block
         from pixelpilot.feedback.error_recovery import ErrorRecovery
         from pixelpilot.ollama.streaming import collect_chat_stream
+        from pixelpilot.prompts.system import SystemPromptBuilder
 
         procedures: list[dict] = []
         if self.retriever is not None and self.ollama_ok:
@@ -782,10 +962,14 @@ class PixelPilotCLI:
             f"[yellow]Vision found issues - asking the model to fix "
             f"(round {self._vision_recovery_rounds}/2)...[/yellow]"
         )
+        messages = [
+            {"role": "system", "content": SystemPromptBuilder(editor=self.editor).editor_rules()},
+            {"role": "user", "content": prompt},
+        ]
         try:
             response = self.client.chat(
                 self.code_model,
-                [{"role": "user", "content": prompt}],
+                messages,
                 stream=self.settings.ollama.stream,
                 temperature=self.settings.ollama.temperature,
                 think=self.settings.ollama.think,
@@ -799,9 +983,43 @@ class PixelPilotCLI:
             return
         fixed = extract_code_block(content)
         if not fixed:
-            self.console.print("[dim]Model produced no corrected script.[/dim]")
-            return
-        report = SafetyValidator(editor=self.editor).validate(fixed)
+            # A correction that contains prose but no executable code is
+            # common enough to warrant one tightly constrained retry. Keep
+            # the original response in the conversation so the model can
+            # repair its format rather than starting its reasoning over.
+            self.console.print("[dim]Correction had no Python code; requesting a code-only retry...[/dim]")
+            messages.extend([
+                {"role": "assistant", "content": content},
+                {
+                    "role": "user",
+                    "content": (
+                        "Your previous answer did not contain a valid Python script. "
+                        "Return ONLY a complete executable Python script in one "
+                        "```python fenced block. Use only the listed API procedures; "
+                        "do not explain the changes."
+                    ),
+                },
+            ])
+            try:
+                response = self.client.chat(
+                    self.code_model,
+                    messages,
+                    stream=self.settings.ollama.stream,
+                    temperature=self.settings.ollama.temperature,
+                    think=self.settings.ollama.think,
+                )
+                if self.settings.ollama.stream:
+                    content = collect_chat_stream(response)
+                else:
+                    content = (response.get("message") or {}).get("content", "")
+            except Exception as exc:  # noqa: BLE001 - cannot reach the model
+                self.console.print(f"[red]Vision-recovery retry failed: {exc}[/red]")
+                return
+            fixed = extract_code_block(content)
+            if not fixed:
+                self.console.print("[dim]Model produced no corrected script after retry.[/dim]")
+                return
+        report = self._safety_validator().validate(fixed)
         self._show_script(fixed, report)
         if report.passed and self._confirm_execute(report):
             self._execute(fixed)
@@ -827,7 +1045,12 @@ class PixelPilotCLI:
             return
         from pixelpilot.feedback.error_recovery import ErrorRecovery
 
-        recovery = ErrorRecovery(self.client, self.settings, editor=self.editor)
+        recovery = ErrorRecovery(
+            self.client,
+            self.settings,
+            editor=self.editor,
+            api_catalog=self._live_gimp_pdb if self.editor == "gimp" else None,
+        )
         self.console.print(f"[yellow]Attempting error recovery (max {recovery.max_retries})...[/yellow]")
         procedures: list[dict] = []
         if self.ollama_ok:
@@ -842,8 +1065,9 @@ class PixelPilotCLI:
         result = recovery.recover(script, error, self.tracker.state, procedures=procedures)
         if result.success and result.script:
             self.console.print("[green]Recovery produced a fixed script.[/green]")
-            self._show_script(result.script, SafetyValidator(editor=self.editor).validate(result.script))
-            if self._confirm_execute(SafetyValidator(editor=self.editor).validate(result.script)):
+            report = self._safety_validator().validate(result.script)
+            self._show_script(result.script, report)
+            if report.passed and self._confirm_execute(report):
                 self._execute(result.script)
         else:
             self.console.print("[red]Recovery failed - please ask the user to intervene.[/red]")

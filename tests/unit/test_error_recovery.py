@@ -60,6 +60,23 @@ def test_recover_sends_system_rules_via_chat():
     assert "broken script" in messages[1]["content"]
 
 
+def test_recover_accepts_a_procedure_from_the_live_gimp_catalog():
+    procedure = "gimp_installed_extension_effect"
+    fixed = f"pdb.{procedure}(image)\n"
+    client = _FakeClient(fixed)
+    recovery = ErrorRecovery(
+        client=client,
+        settings=Settings(),
+        editor="gimp",
+        api_catalog={procedure},
+    )
+
+    result = recovery.recover(original_script="broken script", error="some error")
+
+    assert result.success
+    assert result.script.strip() == fixed.strip()
+
+
 def test_recover_gives_up_after_max_retries_on_repeated_validation_failure():
     # A script that fails safety validation every time (forbidden import) -
     # recovery should stop after max_retries rather than looping forever.

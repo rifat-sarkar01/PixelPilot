@@ -120,7 +120,20 @@ GOTCHAS = """GIMP scripting rules (Python-Fu):
         pdb.gimp_image_select_polygon(image, CHANNEL_OP_REPLACE, points)
         pdb.gimp_context_set_foreground((r, g, b))
         pdb.gimp_edit_fill(drawable, FOREGROUND_FILL)
-        pdb.gimp_selection_none(image)"""
+        pdb.gimp_selection_none(image)
+21. For "remove background" on an illustration or flat/contiguous-color backdrop, use
+    a fuzzy selection from one or more background corners. Add alpha first, select each
+    background region, clear it, then clear the selection. Do NOT invent
+    `pdb.gimp_image_get_pixel` (it is not a GIMP API). For example, to remove sky and
+    ground regions from a simple drawing:
+        pdb.gimp_layer_add_alpha(drawable)
+        pdb.gimp_fuzzy_select(drawable, 0, 0, 30, CHANNEL_OP_REPLACE, True, False, 0, False)
+        pdb.gimp_fuzzy_select(drawable, 0, height - 1, 30, CHANNEL_OP_ADD, True, False, 0, False)
+        pdb.gimp_edit_clear(drawable)
+        pdb.gimp_selection_none(image)
+    This is not semantic photo segmentation. For a detailed photograph, state that a
+    precise subject mask needs user guidance or a segmentation model; never claim the
+    background was reliably isolated when it was not."""
 
 COMMON_PROCEDURES = """Common GIMP procedures (baseline, always available):
 - pdb.gimp_image_undo_group_start / pdb.gimp_image_undo_group_end(image)

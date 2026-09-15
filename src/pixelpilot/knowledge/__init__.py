@@ -117,10 +117,17 @@ def known_api_names(editor: str = "gimp") -> set:
             "add_circle", "draw_circle", "fill_circle",
             "draw_line", "add_line",
             "gimp_selection_rectangle", "gimp_selection_ellipse",
-            "gimp_rectangle_select", "gimp_ellipse_select",
+            "gimp_rectangle_select",
             "gimp_rect_select", "rect_select",
             "select_rectangle", "select_ellipse",
             "gimp_image_get_width", "gimp_image_get_height",
+            # Valid GIMP 2.10 PDB procedures used by the flat/contiguous
+            # background-removal workflow.  Keep this small compatibility
+            # supplement alongside the curated JSON catalog so safety does
+            # not reject real APIs merely because the catalog is incomplete.
+            "gimp_layer_create_mask", "gimp_layer_add_mask", "gimp_layer_add_alpha",
+            "gimp_drawable_get_pixel", "gimp_fuzzy_select", "gimp_by_color_select",
+            "gimp_image_select_color", "gimp_edit_clear",
         }
         for h in helper_names:
             names.add(h)

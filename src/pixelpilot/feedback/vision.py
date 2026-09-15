@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 
+from pixelpilot.feedback.multimodal import known_image_input_rejection, rejected_image_input
 from pixelpilot.feedback.screenshot import to_base64
 from pixelpilot.ollama.client import OllamaClient
 from pixelpilot.prompts.system import SystemPromptBuilder
@@ -23,13 +24,23 @@ class VisionAnalyzer:
     def analyze(
         self, screenshot_bytes: bytes, context: str | None = None, max_retries: int = 1
     ) -> dict:
-        """Return ``{"success": bool, "assessment": str, "fixes": [...], "raw": str}``."""
+        """Return a vision assessment without retrying capability failures."""
         if not self.enabled:
             return {
                 "success": False,
                 "assessment": "Vision feedback is disabled.",
                 "fixes": [],
                 "raw": "",
+                "image_input_rejected": False,
+            }
+        unsupported_reason = known_image_input_rejection(self.model)
+        if unsupported_reason:
+            return {
+                "success": False,
+                "assessment": unsupported_reason,
+                "fixes": [],
+                "raw": "",
+                "image_input_rejected": True,
             }
         builder = SystemPromptBuilder(editor="gimp", vision=True)
         messages = builder.build_vision_messages(to_base64(screenshot_bytes), context=context)
@@ -55,13 +66,21 @@ class VisionAnalyzer:
                          "content": "That was not valid JSON. Respond with JSON only."}
                     )
             except Exception as exc:  # noqa: BLE001 - degrade gracefully
+                image_input_rejected = rejected_image_input(exc)
                 return {
                     "success": False,
                     "assessment": f"Vision model error: {exc}",
                     "fixes": [],
                     "raw": "",
+                    "image_input_rejected": image_input_rejected,
                 }
-        return {"success": False, "assessment": "Could not parse vision response.", "fixes": [], "raw": ""}
+        return {
+            "success": False,
+            "assessment": "Could not parse vision response.",
+            "fixes": [],
+            "raw": "",
+            "image_input_rejected": False,
+        }
 
     @staticmethod
     def _parse_json(content: str) -> dict | None:

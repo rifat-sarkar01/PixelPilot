@@ -13,10 +13,19 @@ RELEVANT API PROCEDURES
 -----------------------
 $procedures
 
-FEW-SHOT EXAMPLE (follow its style)
------------------------------------
+FEW-SHOT EXAMPLE (syntax and API style only)
+---------------------------------------------
 $example
+(The example's request and code are reference material only. Never reuse its
+task, docstring, operations, or subject unless they are explicitly requested
+below.)
 
 CONVERSATION HISTORY
 --------------------
 $history
+
+CURRENT USER REQUEST — AUTHORITATIVE
+------------------------------------
+$current_request
+Write code for this request only. It overrides any different task mentioned in
+the visual plan, API reference, example, or conversation history.

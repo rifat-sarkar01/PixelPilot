@@ -80,8 +80,15 @@ class TestPlannerHappyPath:
         wrapped = f"```json\n{_valid_plan_json()}\n```"
         client = _make_client([wrapped])
         planner = GenerationPlanner(client, model="test-model")
-        plan = planner.plan("draw a house")
+        plan = planner.plan("draw a car")
         assert isinstance(plan, ImagePlan)
+
+    def test_house_plan_requires_recognizable_building_parts(self):
+        client = _make_client([_valid_plan_json()] * 3)
+        planner = GenerationPlanner(client, model="test-model", max_retries=3)
+
+        with pytest.raises(PlannerError, match="House/home plan is visually incomplete"):
+            planner.plan("draw a house")
 
 
 # ---------------------------------------------------------------------------

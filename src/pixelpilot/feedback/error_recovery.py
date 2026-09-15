@@ -53,12 +53,14 @@ class ErrorRecovery:
         editor: str = "gimp",
         model: str | None = None,
         max_retries: int | None = None,
+        api_catalog: set[str] | None = None,
     ) -> None:
         self.client = client
         self.settings = settings
         self.editor = editor
         self.model = model or settings.ollama.code_model
         self.max_retries = max_retries or settings.feedback.max_retries
+        self.api_catalog = api_catalog
 
     def recover(
         self,
@@ -80,7 +82,9 @@ class ErrorRecovery:
         try:
             import ast
             tree = ast.parse(original_script)
-            validator = SafetyValidator(editor=self.editor)
+            validator = SafetyValidator(
+                editor=self.editor, api_catalog=self.api_catalog
+            )
             script_calls = validator._collect_api_calls(tree)
             known_procs = list(procedures)
             known_proc_names = {p.get("name") for p in known_procs}
@@ -139,7 +143,9 @@ class ErrorRecovery:
                 )
                 continue
 
-            report = SafetyValidator(editor=self.editor).validate(fixed)
+            report = SafetyValidator(
+                editor=self.editor, api_catalog=self.api_catalog
+            ).validate(fixed)
             if report.passed:
                 result.script = fixed
                 result.success = True

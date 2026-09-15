@@ -128,6 +128,12 @@ class SocketEditorBridge(EditorBridge):
                 raise BridgeConnectionError(f"Bad bridge protocol magic: {magic!r}")
             length = struct.unpack(">I", self._recv_exact(4))[0]
             body = self._recv_exact(length)
+        except BridgeConnectionError:
+            # A closed peer is a failed connection just like a send error.  In
+            # particular, leave no stale socket behind: callers can then use
+            # the existing lazy-reconnect path on their next request.
+            self.disconnect()
+            raise
         except (OSError, struct.error) as exc:
             self.disconnect()
             raise BridgeConnectionError(f"Failed to read from editor: {exc}") from exc

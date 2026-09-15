@@ -36,9 +36,13 @@ The JSON must match this schema exactly:
       "z_order": <int, 1=back>,
       "label": "<description>",
       "opacity": <0.0–1.0>,
+      "surface": <null or one of: "leaf_noise","bark_rough","stone_grain","wood_grain","water_ripple","sand_fine","metal_brush","brick_pattern">,
+      "shading": <null or one of: "soft_bevel","drop_shadow","inner_glow">,
+      "outline": <null or one of: "thin_dark","thick_dark","white_glow">,
       ... <type-specific fields, all positions are 0.0–1.0 fractions>
     }
-  ]
+  ],
+  "global_post": [<optional list of: "vignette","film_grain","color_grade_warm">]
 }
 
 Type-specific fields (ALL positions/sizes are fractions of canvas width/height):
@@ -48,13 +52,28 @@ Type-specific fields (ALL positions/sizes are fractions of canvas width/height):
   polygon: points [[x,y], ...]     (>=3 vertices)
   line:    x1, y1, x2, y2, stroke_width
 
+Enhancement fields (surface/shading/outline):
+- NEVER represent texture, shading, or outline as extra shape objects. That is wrong.
+- Use "surface" to add a texture to a shape (e.g. "leaf_noise" for tree foliage).
+- Use "shading" to add a lighting effect (e.g. "soft_bevel" for 3D look).
+- Use "outline" to add an edge stroke (e.g. "thin_dark" for definition).
+- All enhancement fields are optional; set to null to skip that pass for the object.
+- Only use preset names from the exact lists above. Do not invent new names.
+
 Rules:
 1. Make the main subject fill 50–80% of the canvas — never tiny.
 2. When a subject has repeated parts (wheels, legs, eyes), give each a
    DIFFERENT position. Never reuse the same x/y for two of the same part.
 3. Use z_order to layer objects correctly (background=1, foreground=highest).
 4. Keep the plan minimal but complete — every visible element needs an object.
-5. Output ONLY the JSON object. No markdown fences, no prose.
+5. Use surface/shading/outline to add realism. A tree canopy should have
+   surface="leaf_noise"; a wooden trunk should have surface="bark_rough".
+6. For a house or home, draw an unmistakable building: a broad rectangular
+   wall/facade below a roof polygon, one door inside the wall, and at least two
+   separate windows inside the wall. The roof must end at the top of the wall;
+   it must not cover the walls, door, or windows. Label these objects with the
+   words wall, roof, door, and window so the plan can be checked.
+7. Output ONLY the JSON object. No markdown fences, no prose.
 """
 
 PLAN_EMIT_USER = """\
