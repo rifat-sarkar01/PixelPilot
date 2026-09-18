@@ -1327,6 +1327,153 @@
       "pitfalls": [
         "Messages appear in the error console, not as a popup dialog."
       ]
+    },
+    {
+      "name": "gimp-fuzzy-select",
+      "category": "selection",
+      "description": "Select a contiguous region by color similarity (magic wand). Used for background removal on flat/illustration backgrounds.",
+      "signature": "pdb.gimp_fuzzy_select(drawable, x, y, threshold, operation, antialias, feather, feather_radius, sample_merged)",
+      "params": [
+        {"name": "drawable", "type": "drawable"},
+        {"name": "x", "type": "float", "description": "X coordinate to start selection"},
+        {"name": "y", "type": "float", "description": "Y coordinate to start selection"},
+        {"name": "threshold", "type": "float", "description": "Color similarity threshold (0-255, typically 15-30)"},
+        {"name": "operation", "type": "int", "description": "CHANNEL_OP_REPLACE=0, CHANNEL_OP_ADD=1, CHANNEL_OP_SUBTRACT=2, CHANNEL_OP_INTERSECT=3"},
+        {"name": "antialias", "type": "boolean"},
+        {"name": "feather", "type": "boolean"},
+        {"name": "feather_radius", "type": "float"},
+        {"name": "sample_merged", "type": "boolean"}
+      ],
+      "returns": "None",
+      "example": "pdb.gimp_fuzzy_select(drawable, 0, 0, 30, CHANNEL_OP_REPLACE, True, False, 0, False)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": [
+        "Do NOT use plug_in_fuzzy_select (does not exist). The correct name is gimp_fuzzy_select.",
+        "Use CHANNEL_OP_ADD to add additional regions to an existing selection.",
+        "For photos with complex backgrounds, fuzzy select may not isolate the subject cleanly."
+      ]
+    },
+    {
+      "name": "gimp-by-color-select",
+      "category": "selection",
+      "description": "Select all pixels of similar color across the entire drawable (not just contiguous).",
+      "signature": "pdb.gimp_by_color_select(drawable, color, threshold, operation, antialias, feather, feather_radius, sample_merged)",
+      "params": [
+        {"name": "drawable", "type": "drawable"},
+        {"name": "color", "type": "color", "description": "Reference color as (R, G, B) tuple"},
+        {"name": "threshold", "type": "float", "description": "Color similarity threshold (0-255)"},
+        {"name": "operation", "type": "int"},
+        {"name": "antialias", "type": "boolean"},
+        {"name": "feather", "type": "boolean"},
+        {"name": "feather_radius", "type": "float"},
+        {"name": "sample_merged", "type": "boolean"}
+      ],
+      "returns": "None",
+      "example": "pdb.gimp_by_color_select(drawable, (255, 255, 255), 30, CHANNEL_OP_REPLACE, True, False, 0, False)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": [
+        "Selects ALL matching pixels, not just contiguous ones. Use gimp_fuzzy_select for contiguous selection."
+      ]
+    },
+    {
+      "name": "gimp-layer-add-alpha",
+      "category": "layer",
+      "description": "Add an alpha channel to a layer. Required before clearing to transparency (background removal).",
+      "signature": "pdb.gimp_layer_add_alpha(layer)",
+      "params": [
+        {"name": "layer", "type": "layer"}
+      ],
+      "returns": "None",
+      "example": "pdb.gimp_layer_add_alpha(drawable)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": [
+        "Must be called BEFORE gimp_edit_clear, otherwise clearing fills with the background color instead of transparency.",
+        "Has no effect if the layer already has an alpha channel."
+      ]
+    },
+    {
+      "name": "gimp-edit-clear",
+      "category": "edit",
+      "description": "Clear the selected region of a drawable to transparency (if alpha exists) or background color.",
+      "signature": "pdb.gimp_edit_clear(drawable)",
+      "params": [
+        {"name": "drawable", "type": "drawable"}
+      ],
+      "returns": "None",
+      "example": "pdb.gimp_edit_clear(drawable)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": [
+        "Only affects the current selection. Call gimp_selection_all first to clear everything.",
+        "Clears to transparency only if the layer has an alpha channel (call gimp_layer_add_alpha first)."
+      ]
+    },
+    {
+      "name": "gimp-layer-create-mask",
+      "category": "layer",
+      "description": "Create a new layer mask. The mask type determines the initial content.",
+      "signature": "pdb.gimp_layer_create_mask(layer, mask_type) -> mask",
+      "params": [
+        {"name": "layer", "type": "layer"},
+        {"name": "mask_type", "type": "int", "description": "ADD_MASK_WHITE=0, ADD_MASK_BLACK=1, ADD_MASK_ALPHA=2, ADD_MASK_ALPHA_TRANSFER=3, ADD_MASK_SELECTION=4, ADD_MASK_COPY=5"}
+      ],
+      "returns": "mask",
+      "example": "mask = pdb.gimp_layer_create_mask(layer, ADD_MASK_WHITE)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": [
+        "This only CREATES the mask object. You must also call gimp_layer_add_mask to attach it."
+      ]
+    },
+    {
+      "name": "gimp-layer-add-mask",
+      "category": "layer",
+      "description": "Attach a previously created mask to a layer.",
+      "signature": "pdb.gimp_layer_add_mask(layer, mask)",
+      "params": [
+        {"name": "layer", "type": "layer"},
+        {"name": "mask", "type": "mask"}
+      ],
+      "returns": "None",
+      "example": "pdb.gimp_layer_add_mask(layer, mask)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": [
+        "A layer can only have one mask. Remove the existing mask first if needed."
+      ]
+    },
+    {
+      "name": "gimp-drawable-get-pixel",
+      "category": "drawable",
+      "description": "Read the color value of a single pixel from a drawable.",
+      "signature": "pdb.gimp_drawable_get_pixel(drawable, x, y) -> (num_channels, pixel)",
+      "params": [
+        {"name": "drawable", "type": "drawable"},
+        {"name": "x", "type": "int"},
+        {"name": "y", "type": "int"}
+      ],
+      "returns": "(int, pixel)",
+      "example": "num_channels, pixel = pdb.gimp_drawable_get_pixel(drawable, 0, 0)",
+      "version_compat": ["2.10", "3.0"],
+      "pitfalls": [
+        "Do NOT use gimp_image_get_pixel (does not exist). The correct name is gimp_drawable_get_pixel.",
+        "Returns (num_channels, pixel) tuple where pixel is a tuple of channel values."
+      ]
+    },
+    {
+      "name": "gimp-image-select-color",
+      "category": "selection",
+      "description": "Select all pixels matching a specific color in the image.",
+      "signature": "pdb.gimp_image_select_color(image, operation, drawable, color)",
+      "params": [
+        {"name": "image", "type": "image"},
+        {"name": "operation", "type": "int"},
+        {"name": "drawable", "type": "drawable"},
+        {"name": "color", "type": "color"}
+      ],
+      "returns": "None",
+      "example": "pdb.gimp_image_select_color(image, CHANNEL_OP_REPLACE, drawable, (255, 255, 255))",
+      "version_compat": ["2.10"],
+      "pitfalls": [
+        "This is a GIMP 2.10 procedure; GIMP 3.x may differ."
+      ]
     }
   ]
 }

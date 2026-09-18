@@ -3,7 +3,12 @@
 from pixelpilot.codegen.gimp_codegen import GimpCodeGen
 from pixelpilot.codegen.ir import Operation, ScriptPlan, parse_ir
 from pixelpilot.codegen.krita_codegen import KritaCodeGen
-from pixelpilot.codegen.validator import SafetyReport, SafetyValidator, extract_code_block
+from pixelpilot.codegen.validator import (
+    SafetyReport,
+    SafetyValidator,
+    ScriptAutoFixer,
+    extract_code_block,
+)
 
 __all__ = [
     "GimpCodeGen",
@@ -11,7 +16,9 @@ __all__ = [
     "Operation",
     "SafetyReport",
     "SafetyValidator",
+    "ScriptAutoFixer",
     "ScriptPlan",
     "extract_code_block",
     "parse_ir",
 ]
+

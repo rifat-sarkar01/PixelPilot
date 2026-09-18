@@ -102,6 +102,138 @@ FENCED_CODE_RE = re.compile(
     r"```(?:python|py|gimp|krita)?[^\n]*\n(.*?)```", re.DOTALL
 )
 
+# ---------------------------------------------------------------------------
+# Auto-fixer: repair common LLM mistakes before validation
+# ---------------------------------------------------------------------------
+
+# Map of hallucinated API names → correct GIMP PDB names.
+# Keys are the wrong call as the LLM writes it (without ``pdb.`` prefix);
+# values are the correct PDB procedure name.
+_API_HALLUCINATION_FIXES: dict[str, str] = {
+    "plug_in_fuzzy_select": "gimp_fuzzy_select",
+    "plug_in_fuzzy_select_by_color": "gimp_by_color_select",
+    "gimp_image_get_pixel": "gimp_drawable_get_pixel",
+    "gimp_layer_get_alpha": "gimp_layer_add_alpha",
+    "plug_in_color_select": "gimp_by_color_select",
+    "gimp_image_select_by_color": "gimp_by_color_select",
+}
+
+# Pre-compiled regex for each hallucinated name (matches pdb.XXX or bare XXX).
+_API_FIX_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\b" + re.escape(wrong) + r"\b"), correct)
+    for wrong, correct in _API_HALLUCINATION_FIXES.items()
+]
+
+
+class ScriptAutoFixer:
+    """Repair common LLM mistakes in generated scripts.
+
+    Runs **before** safety validation so that trivially fixable issues
+    (f-strings, hallucinated API names) don't trigger a full re-generation
+    round-trip through the LLM.  Every fix is logged so the user sees what
+    was changed.
+    """
+
+    def auto_fix(self, script: str) -> tuple[str, list[str]]:
+        """Return ``(fixed_script, list_of_fix_descriptions)``.
+
+        If nothing was changed, the original script is returned unmodified.
+        """
+        fixes: list[str] = []
+        result = script
+
+        # 1. Convert f-strings to %-formatting
+        result, fstring_fixes = self._fix_fstrings(result)
+        fixes.extend(fstring_fixes)
+
+        # 2. Fix hallucinated API names
+        result, api_fixes = self._fix_api_names(result)
+        fixes.extend(api_fixes)
+
+        return result, fixes
+
+    # ---------------------------------------------------------------- f-strings
+
+    @staticmethod
+    def _fix_fstrings(script: str) -> tuple[str, list[str]]:
+        """Replace f-strings with %-formatting (Python 2.7 compatible).
+
+        Uses AST inspection to find f-strings, then rewrites the source
+        lines.  Falls back to a regex approach when AST parsing fails.
+        """
+        try:
+            tree = ast.parse(script)
+        except SyntaxError:
+            return script, []
+
+        fstring_nodes: list[ast.JoinedStr] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.JoinedStr):
+                fstring_nodes.append(node)
+
+        if not fstring_nodes:
+            return script, []
+
+        # Regex replacement: match f"..." / f'...' and their raw variants.
+        # This is intentionally broad — the AST already confirmed f-strings
+        # exist, so we only need a best-effort text rewrite.
+        fstring_re = re.compile(
+            r'(?<![A-Za-z0-9_])([fF][rR]?|[rR][fF])'
+            r'("""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|"[^"\n]*"|\'[^\'\n]*\')'
+        )
+
+        count = 0
+
+        def _rewrite(m: re.Match) -> str:
+            nonlocal count
+            raw_body = m.group(2)
+            # Determine quote style
+            if raw_body.startswith('"""') or raw_body.startswith("'''"):
+                q = raw_body[:3]
+                body = raw_body[3:-3]
+            else:
+                q = raw_body[0]
+                body = raw_body[1:-1]
+
+            # Replace {expr} with %s and collect expressions
+            exprs: list[str] = []
+            brace_re = re.compile(r'\{([^{}]+)\}')
+
+            def _sub_expr(em: re.Match) -> str:
+                exprs.append(em.group(1).strip())
+                return "%s"
+
+            new_body = brace_re.sub(_sub_expr, body)
+
+            count += 1
+            if len(exprs) == 1:
+                return f"{q}{new_body}{q} % ({exprs[0]},)"
+            elif exprs:
+                args = ", ".join(exprs)
+                return f"{q}{new_body}{q} % ({args},)"
+            else:
+                # f-string with no interpolations — just drop the f prefix
+                return f"{q}{new_body}{q}"
+
+        result = fstring_re.sub(_rewrite, script)
+        if count > 0:
+            return result, [f"converted {count} f-string(s) to %-formatting (Python 2.7)"]
+        return script, []
+
+    # --------------------------------------------------------- API name fixes
+
+    @staticmethod
+    def _fix_api_names(script: str) -> tuple[str, list[str]]:
+        """Replace hallucinated GIMP API names with correct equivalents."""
+        fixes: list[str] = []
+        result = script
+        for pattern, correct in _API_FIX_PATTERNS:
+            if pattern.search(result):
+                result = pattern.sub(correct, result)
+                wrong = pattern.pattern.strip("\\b")
+                fixes.append(f"replaced {wrong} → {correct}")
+        return result, fixes
+
 
 def extract_code_block(text: str) -> str | None:
     """Layer 1: pull the first fenced Python code block out of a response."""

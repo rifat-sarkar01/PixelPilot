@@ -438,12 +438,21 @@ class PixelPilotCLI:
             self.console.print("[red]No script was generated.[/red]")
             return
 
-        # 3. Validate.
+        # 3. Auto-fix common LLM mistakes (f-strings, hallucinated APIs)
+        #    before validation to avoid pointless re-generation cycles.
+        from pixelpilot.codegen.validator import ScriptAutoFixer
+
+        fixer = ScriptAutoFixer()
+        script, fixes = fixer.auto_fix(script)
+        if fixes:
+            self.console.print("[dim]Auto-fixed: " + "; ".join(fixes) + "[/dim]")
+
+        # 4. Validate.
         validator = self._safety_validator()
         report = validator.validate(script)
         self._show_script(script, report)
 
-        # 4. Confirmation + execution.
+        # 5. Confirmation + execution.
         if report.passed:
             if self._confirm_execute(report):
                 self._execute(script)
@@ -568,9 +577,25 @@ class PixelPilotCLI:
         """Open a generated PNG in the connected editor, with actionable errors."""
         self._working_image_path = out_path
         if self.editor == "gimp":
-            # The socket bridge is a headless GIMP process, not the user's
-            # visible editor.  Launch the normal GIMP UI with this file; later
-            # prompt edits use the reliable file-based Python-Fu runner.
+            # Prefer the socket bridge when available: load the image into the
+            # already-running GIMP so that subsequent edit prompts execute
+            # instantly via the bridge instead of spawning a new process.
+            if self.bridge_ok:
+                try:
+                    path = str(out_path).replace("\\", "/")
+                    self.bridge.execute_script(
+                        "from gimpfu import *\n"
+                        "image = pdb.gimp_file_load(RUN_NONINTERACTIVE, %r, %r)\n"
+                        "pdb.gimp_display_new(image)\n"
+                        "pdb.gimp_displays_flush()\n" % (path, path)
+                    )
+                    self.console.print("[green]Opened in GIMP via bridge — ready for your next edit prompt.[/green]")
+                    return
+                except (BridgeConnectionError, BridgeExecutionError) as exc:
+                    self.console.print(
+                        f"[dim]Bridge could not open the image ({exc}); falling back to direct launch.[/dim]"
+                    )
+            # Fallback: launch GIMP directly with the file.
             try:
                 from pixelpilot.bridge.gimp_batch import open_in_gimp
 
@@ -793,28 +818,31 @@ class PixelPilotCLI:
     # -------------------------------------------------------------- execution
 
     def _execute(self, script: str) -> None:
-        if self.editor == "gimp" and self._working_image_path is not None:
-            self._execute_gimp_file_edit(script)
-            return
+        # Prefer the fast socket bridge when it's connected (instant execution
+        # vs ~20-30s GIMP startup per batch edit).  Fall back to the headless
+        # GIMP batch runner only when the bridge is unavailable.
         if not self.bridge_ok:
             # The editor may have finished starting (or been opened manually)
             # since the last attempt - try a cheap reconnect before giving up.
             self._connect_once()
-        if not self.bridge_ok:
-            self.console.print(
-                f"[yellow]Editor bridge not connected - script validated but not executed.[/yellow]\n"
-                f"Run /connect to launch {self.editor.title()} with the PixelPilot bridge, "
-                f"or open it manually with the plugin enabled."
-            )
+        if self.bridge_ok:
+            self.console.print("[dim]Executing via bridge...[/dim]")
+            try:
+                result = self.bridge.execute_script(script)
+                self.console.print(f"[green]Executed.[/green] {result}")
+            except Exception as exc:  # noqa: BLE001
+                self.console.print(f"[red]Execution failed: {exc}[/red]")
+                self._error_recovery(script, str(exc))
             return
-        self.console.print("[dim]Executing...[/dim]")
-        try:
-            result = self.bridge.execute_script(script)
-            self.console.print(f"[green]Executed.[/green] {result}")
-        except Exception as exc:  # noqa: BLE001
-            self.console.print(f"[red]Execution failed: {exc}[/red]")
-            self._error_recovery(script, str(exc))
+        # Bridge unavailable — use the file-based GIMP batch runner as fallback.
+        if self.editor == "gimp" and self._working_image_path is not None:
+            self._execute_gimp_file_edit(script)
             return
+        self.console.print(
+            f"[yellow]Editor bridge not connected - script validated but not executed.[/yellow]\n"
+            f"Run /connect to launch {self.editor.title()} with the PixelPilot bridge, "
+            f"or open it manually with the plugin enabled."
+        )
 
     def _execute_gimp_file_edit(self, script: str) -> None:
         """Apply a validated prompt edit to the current GIMP working image."""
